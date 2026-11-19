@@ -2,9 +2,10 @@ plugins {
     id 'com.android.application'
 }
 
+def isPublicRelease = providers.gradleProperty('publicRelease').getOrElse('false').toBoolean()
 def localProps = new Properties()
 def localPropsFile = rootProject.file('local.properties')
-if (localPropsFile.isFile()) {
+if (!isPublicRelease && localPropsFile.isFile()) {
     localPropsFile.withInputStream { localProps.load(it) }
 }
 def propStr = { String key ->
