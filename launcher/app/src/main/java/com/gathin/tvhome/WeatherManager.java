@@ -14,13 +14,15 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
  * Lightweight weather fetcher powered by Open-Meteo (free, no API key required).
- * Resolves either a user-configured city via Open-Meteo Geocoding or approximate location by IP,
+ * Resolves either a user-selected city (with exact coordinates) or approximate location by IP,
  * caches the result for 30 minutes, and formats a concise line for the Home clock header.
  */
 final class WeatherManager {
@@ -35,8 +37,51 @@ final class WeatherManager {
     private static final String KEY_FETCH_MS = "fetch_ms";
     private static final long REFRESH_TTL_MS = 30 * 60_000L;
 
+    static final class CityOption {
+        final String name;
+        final String admin1;
+        final String country;
+        final double lat;
+        final double lon;
+
+        CityOption(String name, String admin1, String country, double lat, double lon) {
+            this.name = name == null ? "" : name.trim();
+            this.admin1 = admin1 == null ? "" : admin1.trim();
+            this.country = country == null ? "" : country.trim();
+            this.lat = lat;
+            this.lon = lon;
+        }
+
+        /** Full disambiguated label for the search picker, e.g. "Palestina — São Paulo, Brasil". */
+        String pickerLabel() {
+            StringBuilder sb = new StringBuilder(name);
+            if (!admin1.isEmpty() && !admin1.equalsIgnoreCase(name)) {
+                sb.append(" \u2014 ").append(admin1);
+                if (!country.isEmpty()) sb.append(", ").append(country);
+            } else if (!country.isEmpty()) {
+                sb.append(" \u2014 ").append(country);
+            }
+            return sb.toString();
+        }
+
+        /** Compact label saved and shown on Home, e.g. "Palestina, São Paulo". */
+        String savedLabel() {
+            if (!admin1.isEmpty() && !admin1.equalsIgnoreCase(name)) {
+                return name + ", " + admin1;
+            }
+            if (!country.isEmpty()) {
+                return name + ", " + country;
+            }
+            return name;
+        }
+    }
+
     interface Callback {
         void onWeather(String formatted);
+    }
+
+    interface SearchCallback {
+        void onResults(List<CityOption> results);
     }
 
     private final Context appCtx;
@@ -71,15 +116,55 @@ final class WeatherManager {
         return formatLine(temp, code, isDay, city, isPortuguese());
     }
 
+    /** Searches up to 8 matching cities via Open-Meteo Geocoding on a background thread. */
+    static void searchCities(Context ctx, String query, SearchCallback callback) {
+        final String clean = query == null ? "" : query.trim();
+        final Locale loc = ctx.getResources().getConfiguration().getLocales().get(0);
+        final String lang = (loc != null && "pt".equalsIgnoreCase(loc.getLanguage())) ? "pt" : "en";
+        final Handler main = new Handler(Looper.getMainLooper());
+        new Thread(() -> {
+            List<CityOption> list = new ArrayList<>();
+            if (!clean.isEmpty()) {
+                try {
+                    String encoded = URLEncoder.encode(clean, "UTF-8");
+                    String body = httpGet("https://geocoding-api.open-meteo.com/v1/search?name="
+                            + encoded + "&count=8&language=" + lang + "&format=json");
+                    if (body != null) {
+                        JSONArray results = new JSONObject(body).optJSONArray("results");
+                        if (results != null) {
+                            for (int i = 0; i < results.length(); i++) {
+                                JSONObject o = results.getJSONObject(i);
+                                list.add(new CityOption(
+                                        o.optString("name", ""),
+                                        o.optString("admin1", ""),
+                                        o.optString("country", ""),
+                                        o.getDouble("latitude"),
+                                        o.getDouble("longitude")));
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+            main.post(() -> callback.onResults(list));
+        }, "weather-city-search").start();
+    }
+
     /** Delivers cached weather immediately (if matching) and refreshes in background when stale or city changed. */
     void refresh(String cityQuery, Callback callback) {
         if (closed) return;
+        SharedPreferences settings = appCtx.getSharedPreferences(Config.SETTINGS_NAME, Context.MODE_PRIVATE);
+        final boolean hasPinnedCoords = settings.contains(Config.WEATHER_LAT_KEY) && settings.contains(Config.WEATHER_LON_KEY);
+        final double pinnedLat = hasPinnedCoords ? Double.longBitsToDouble(settings.getLong(Config.WEATHER_LAT_KEY, 0L)) : Double.NaN;
+        final double pinnedLon = hasPinnedCoords ? Double.longBitsToDouble(settings.getLong(Config.WEATHER_LON_KEY, 0L)) : Double.NaN;
         String q = normalizeQuery(cityQuery);
-        String cached = cachedLine(q);
+        final String cacheKey = hasPinnedCoords ? (q + "@" + String.format(Locale.US, "%.4f,%.4f", pinnedLat, pinnedLon)) : q;
+
+        String cached = cachedLine(cacheKey);
         if (cached != null) callback.onWeather(cached);
 
         long lastMs = cache.getLong(KEY_FETCH_MS, 0L);
-        boolean sameQuery = q.equals(cache.getString(KEY_CITY_QUERY, null));
+        boolean sameQuery = cacheKey.equals(cache.getString(KEY_CITY_QUERY, null));
         if (sameQuery && cached != null && (System.currentTimeMillis() - lastMs) < REFRESH_TTL_MS) {
             return;
         }
@@ -87,14 +172,16 @@ final class WeatherManager {
         executor.execute(() -> {
             if (closed) return;
             try {
-                double lat = Double.NaN;
-                double lon = Double.NaN;
-                String cityLabel = "";
+                double lat = pinnedLat;
+                double lon = pinnedLon;
+                String cityLabel = hasPinnedCoords ? q : "";
 
-                if (sameQuery && cache.contains(KEY_LAT) && cache.contains(KEY_LON)) {
-                    lat = Double.longBitsToDouble(cache.getLong(KEY_LAT, 0L));
-                    lon = Double.longBitsToDouble(cache.getLong(KEY_LON, 0L));
-                    cityLabel = cache.getString(KEY_CITY_LABEL, "");
+                if (Double.isNaN(lat) || Double.isNaN(lon)) {
+                    if (sameQuery && cache.contains(KEY_LAT) && cache.contains(KEY_LON)) {
+                        lat = Double.longBitsToDouble(cache.getLong(KEY_LAT, 0L));
+                        lon = Double.longBitsToDouble(cache.getLong(KEY_LON, 0L));
+                        cityLabel = cache.getString(KEY_CITY_LABEL, "");
+                    }
                 }
 
                 if (Double.isNaN(lat) || Double.isNaN(lon)) {
@@ -119,7 +206,7 @@ final class WeatherManager {
                 boolean isDay = current.optInt("is_day", 1) == 1;
 
                 cache.edit()
-                        .putString(KEY_CITY_QUERY, q)
+                        .putString(KEY_CITY_QUERY, cacheKey)
                         .putString(KEY_CITY_LABEL, cityLabel)
                         .putLong(KEY_LAT, Double.doubleToRawLongBits(lat))
                         .putLong(KEY_LON, Double.doubleToRawLongBits(lon))

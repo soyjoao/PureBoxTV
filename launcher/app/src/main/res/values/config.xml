@@ -490,6 +490,8 @@
     <bool name="show_weather">true</bool>
     <!-- Optional city name for weather; empty uses approximate IP location automatically. -->
     <string name="weather_city" translatable="false"></string>
+    <!-- Spotlight carousel on Home (full-screen rotating backdrops); false shows the chosen wallpaper instead. -->
+    <bool name="spotlight_enabled">true</bool>
 
     <!-- Each team's next game in the F1 panel's place under the clock, rotating with the theme's F1 weekend: the package
          of an add-on that publishes them (the Game Day add-on: io.github.justinnewman.gameday; contract in docs/modules.md).

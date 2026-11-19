@@ -22,4 +22,10 @@ public class WeatherManagerTest {
         String line = WeatherManager.formatLine(21, 3, true, "", true);
         assertEquals("\u2601\uFE0F 21°C · Nublado", line);
     }
+
+    @Test public void formatsCityPickerAndSavedLabels() {
+        WeatherManager.CityOption sp = new WeatherManager.CityOption("Palestina", "São Paulo", "Brasil", -20.39, -49.43);
+        assertEquals("Palestina \u2014 São Paulo, Brasil", sp.pickerLabel());
+        assertEquals("Palestina, São Paulo", sp.savedLabel());
+    }
 }

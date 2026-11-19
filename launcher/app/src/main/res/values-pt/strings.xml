@@ -108,6 +108,8 @@
     <string name="wallpaper_none">Nenhum</string>
     <string name="wallpaper_applied">Papel de parede alterado</string>
     <string name="wallpaper_theme_default">Padrão do tema</string>
+    <string name="wallpaper_spotlight_active">Spotlight ativo</string>
+    <string name="spotlight_enabled_state">Carrossel Spotlight: %1$s</string>
     <string name="animations_state">Animações: %1$s</string>
     <string name="advanced_effects">Efeitos avançados</string>
     <string name="advanced_effects_state">Efeitos avançados: %1$s</string>
@@ -178,6 +180,15 @@
     <string name="weather_city_label">Cidade do clima</string>
     <string name="weather_city_state">Cidade do clima: %1$s</string>
     <string name="weather_city_auto">Automático (IP)</string>
+    <string name="weather_city_search">Procurar</string>
+    <string name="weather_city_searching">Procurando cidades…</string>
+    <string name="weather_city_not_found">Nenhuma cidade encontrada</string>
+    <string name="weather_city_pick_title">Escolha a cidade</string>
+    <string name="settings_cat_appearance">Aparência e Grade</string>
+    <string name="settings_cat_background">Fundo e Spotlight</string>
+    <string name="settings_cat_clock_weather">Relógio e Clima</string>
+    <string name="settings_cat_system">Sistema e Desempenho</string>
+    <string name="settings_cat_general">Geral e TV</string>
     <string name="ambient_glow_state">Brilho ambiente colorido: %1$s</string>
     <string name="app_glow_state">Destaque colorido no foco do app: %1$s</string>
     <string name="library_button_state">Botão Biblioteca de apps no topo: %1$s</string>

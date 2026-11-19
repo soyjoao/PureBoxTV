@@ -40,6 +40,7 @@ public final class LauncherSettingsActivity extends Activity {
     private static final int[] IDLE_CLOCK_MINUTES = {5, 15, 30, 60, 0};
     private final TextView[] idleClockChoices = new TextView[IDLE_CLOCK_MINUTES.length];
     private TextView wallpaperChoice;
+    private TextView spotlightEnabledChoice;
     private TextView animationsChoice;
     private TextView advancedChoice;
     private TextView tmdbApiKeyChoice;
@@ -60,6 +61,18 @@ public final class LauncherSettingsActivity extends Activity {
     private TextView showLibraryPillChoice;
     private TextView followThemeChoice;
     private TextView openOnStartChoice;
+    private TextView sectionTitle;
+    private android.widget.ScrollView settingsScroll;
+    private TextView[] navItems;
+    private View[] categoryPanels;
+    private final int[] categoryTitleRes = {
+            R.string.settings_cat_appearance,
+            R.string.settings_cat_background,
+            R.string.settings_cat_clock_weather,
+            R.string.settings_cat_system,
+            R.string.settings_cat_general
+    };
+    private int activeCategory = 0;
     private int columns;
     private int rowsBelowDock;
     private int dockOpacity;
@@ -75,6 +88,7 @@ public final class LauncherSettingsActivity extends Activity {
     private boolean showStats;
     private boolean showWeather;
     private String weatherCity;
+    private boolean spotlightEnabled;
     private boolean ambientGlow;
     private boolean appGlow;
     private boolean libraryButton;
@@ -121,6 +135,7 @@ public final class LauncherSettingsActivity extends Activity {
         showStats = config.showStats;
         showWeather = config.showWeather;
         weatherCity = config.weatherCity;
+        spotlightEnabled = config.spotlightEnabled;
         ambientGlow = config.ambientGlow;
         appGlow = config.appGlow;
         libraryButton = config.libraryButton;
@@ -200,6 +215,13 @@ public final class LauncherSettingsActivity extends Activity {
         }
         wallpaperChoice = findViewById(R.id.wallpaperChoice);
         wallpaperChoice.setOnClickListener(v -> showWallpaperPicker());
+        spotlightEnabledChoice = findViewById(R.id.spotlightEnabledChoice);
+        spotlightEnabledChoice.setOnClickListener(v -> {
+            spotlightEnabled = !spotlightEnabled;
+            choices.edit().putBoolean(Config.SPOTLIGHT_ENABLED_KEY, spotlightEnabled).apply();
+            changed();
+            refresh();
+        });
         animationsChoice = findViewById(R.id.animationsChoice);
         animationsChoice.setOnClickListener(v -> {
             animations = !animations;
@@ -340,6 +362,8 @@ public final class LauncherSettingsActivity extends Activity {
                     .remove(Config.ALWAYS_SHOW_NAMES_KEY).remove(Config.SHOW_GREETING_KEY)
                     .remove(Config.GREETING_NAME_KEY).remove(Config.SHOW_STATS_KEY)
                     .remove(Config.SHOW_WEATHER_KEY).remove(Config.WEATHER_CITY_KEY)
+                    .remove(Config.WEATHER_LAT_KEY).remove(Config.WEATHER_LON_KEY)
+                    .remove(Config.SPOTLIGHT_ENABLED_KEY)
                     .remove(Config.AMBIENT_GLOW_KEY).remove(Config.APP_GLOW_KEY)
                     .remove(Config.LIBRARY_BUTTON_KEY).remove(Config.SHOW_LIBRARY_PILL_KEY).commit();
             Config current = Config.load(this);
@@ -358,6 +382,7 @@ public final class LauncherSettingsActivity extends Activity {
             showStats = current.showStats;
             showWeather = current.showWeather;
             weatherCity = current.weatherCity;
+            spotlightEnabled = current.spotlightEnabled;
             ambientGlow = current.ambientGlow;
             appGlow = current.appGlow;
             libraryButton = current.libraryButton;
@@ -369,9 +394,73 @@ public final class LauncherSettingsActivity extends Activity {
                 open(new Intent(this, HomeSettingsActivity.class)));
         findViewById(R.id.tvSettingsChoice).setOnClickListener(v ->
                 open(SystemSettings.intent(this, Settings.ACTION_SETTINGS)));
+
+        sectionTitle = findViewById(R.id.sectionTitle);
+        settingsScroll = findViewById(R.id.settingsScroll);
+        TextView versionView = findViewById(R.id.settingsVersion);
+        if (versionView != null) versionView.setText("PureBoxTV v" + BuildConfig.VERSION_NAME);
+
+        navItems = new TextView[] {
+                findViewById(R.id.navAppearance),
+                findViewById(R.id.navBackground),
+                findViewById(R.id.navClockWeather),
+                findViewById(R.id.navSystem),
+                findViewById(R.id.navGeneral)
+        };
+        categoryPanels = new View[] {
+                findViewById(R.id.panelAppearance),
+                findViewById(R.id.panelBackground),
+                findViewById(R.id.panelClockWeather),
+                findViewById(R.id.panelSystem),
+                findViewById(R.id.panelGeneral)
+        };
+        for (int i = 0; i < navItems.length; i++) {
+            final int index = i;
+            navItems[i].setOnFocusChangeListener((v, hasFocus) -> {
+                if (hasFocus) selectCategory(index);
+            });
+            navItems[i].setOnClickListener(v -> {
+                selectCategory(index);
+                focusFirstInPanel(categoryPanels[index]);
+            });
+        }
+
         refresh();
-        if (config.launcherSettingsButton) reorderChoice.requestFocus();
-        else columnChoices[Math.max(0, Math.min(columns - 4, 3))].requestFocus();
+        selectCategory(0);
+        navItems[0].requestFocus();
+    }
+
+    private void selectCategory(int index) {
+        activeCategory = index;
+        if (sectionTitle != null) sectionTitle.setText(categoryTitleRes[index]);
+        for (int i = 0; i < navItems.length; i++) {
+            navItems[i].setSelected(i == index);
+            categoryPanels[i].setVisibility(i == index ? View.VISIBLE : View.GONE);
+        }
+        if (settingsScroll != null) settingsScroll.scrollTo(0, 0);
+    }
+
+    private void focusFirstInPanel(View panel) {
+        if (!(panel instanceof android.view.ViewGroup)) return;
+        android.view.ViewGroup group = (android.view.ViewGroup) panel;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child.getVisibility() != View.VISIBLE) continue;
+            if (child.isFocusable()) {
+                child.requestFocus();
+                return;
+            }
+            if (child instanceof android.view.ViewGroup) {
+                android.view.ViewGroup inner = (android.view.ViewGroup) child;
+                for (int j = 0; j < inner.getChildCount(); j++) {
+                    View innerChild = inner.getChildAt(j);
+                    if (innerChild.getVisibility() == View.VISIBLE && innerChild.isFocusable()) {
+                        innerChild.requestFocus();
+                        return;
+                    }
+                }
+            }
+        }
     }
 
     private void reverseRow(TextView[] views) {
@@ -397,18 +486,23 @@ public final class LauncherSettingsActivity extends Activity {
                 .setTitle(R.string.wallpaper_label)
                 .setSingleChoiceItems(labels, checked, (dialog, which) -> {
                     dialog.dismiss();
+                    spotlightEnabled = false;
+                    SharedPreferences.Editor ed = choices.edit().putBoolean(Config.SPOTLIGHT_ENABLED_KEY, false);
                     if (which == images.size()) {
-                        choices.edit().putString(Config.WALLPAPER_CHOICE_KEY, "none").apply();
+                        ed.putString(Config.WALLPAPER_CHOICE_KEY, "none").apply();
                     } else {
-                        choices.edit().putString(Config.WALLPAPER_CHOICE_KEY,
-                                images.get(which).getName()).apply();
+                        ed.putString(Config.WALLPAPER_CHOICE_KEY, images.get(which).getName()).apply();
                     }
                     changed();
                     Toast.makeText(this, R.string.wallpaper_applied, Toast.LENGTH_SHORT).show();
                     refresh();
                 })
                 .setNeutralButton(R.string.wallpaper_theme_default, (dialog, which) -> {
-                    choices.edit().remove(Config.WALLPAPER_CHOICE_KEY).apply();
+                    spotlightEnabled = false;
+                    choices.edit()
+                            .putBoolean(Config.SPOTLIGHT_ENABLED_KEY, false)
+                            .remove(Config.WALLPAPER_CHOICE_KEY)
+                            .apply();
                     changed();
                     refresh();
                 })
@@ -568,28 +662,64 @@ public final class LauncherSettingsActivity extends Activity {
         int pad = (int) (18 * density);
         input.setPadding(pad, pad, pad, pad);
         builder.setView(input);
-        builder.setPositiveButton(R.string.save, (d, which) -> {
-            weatherCity = input.getText().toString().trim();
-            if (weatherCity.isEmpty()) {
-                choices.edit().remove(Config.WEATHER_CITY_KEY).apply();
-            } else {
-                choices.edit().putString(Config.WEATHER_CITY_KEY, weatherCity).apply();
+        builder.setPositiveButton(R.string.weather_city_search, (d, which) -> {
+            String query = input.getText().toString().trim();
+            if (query.isEmpty()) {
+                clearWeatherCity();
+                return;
             }
-            changed();
-            refresh();
+            Toast.makeText(this, R.string.weather_city_searching, Toast.LENGTH_SHORT).show();
+            WeatherManager.searchCities(this, query, results -> {
+                if (isFinishing() || isDestroyed()) return;
+                if (results == null || results.isEmpty()) {
+                    Toast.makeText(this, R.string.weather_city_not_found, Toast.LENGTH_LONG).show();
+                    return;
+                }
+                showWeatherCityResultsDialog(results);
+            });
         });
-        builder.setNeutralButton(R.string.reset, (d, which) -> {
-            choices.edit().remove(Config.WEATHER_CITY_KEY).apply();
-            weatherCity = Config.load(this).weatherCity;
-            changed();
-            refresh();
-        });
+        builder.setNeutralButton(R.string.weather_city_auto, (d, which) -> clearWeatherCity());
         builder.setNegativeButton(android.R.string.cancel, null);
         AlertDialog dialog = builder.create();
         if (dialog.getWindow() != null) {
             dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
         }
         dialog.show();
+    }
+
+    private void showWeatherCityResultsDialog(List<WeatherManager.CityOption> results) {
+        String[] labels = new String[results.size()];
+        for (int i = 0; i < results.size(); i++) {
+            labels[i] = results.get(i).pickerLabel();
+        }
+        final int[] selected = {0};
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.weather_city_pick_title)
+                .setSingleChoiceItems(labels, 0, (d, which) -> selected[0] = which)
+                .setPositiveButton(R.string.save, (d, which) -> {
+                    WeatherManager.CityOption chosen = results.get(selected[0]);
+                    weatherCity = chosen.savedLabel();
+                    choices.edit()
+                            .putString(Config.WEATHER_CITY_KEY, weatherCity)
+                            .putLong(Config.WEATHER_LAT_KEY, Double.doubleToRawLongBits(chosen.lat))
+                            .putLong(Config.WEATHER_LON_KEY, Double.doubleToRawLongBits(chosen.lon))
+                            .apply();
+                    changed();
+                    refresh();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void clearWeatherCity() {
+        choices.edit()
+                .remove(Config.WEATHER_CITY_KEY)
+                .remove(Config.WEATHER_LAT_KEY)
+                .remove(Config.WEATHER_LON_KEY)
+                .apply();
+        weatherCity = Config.load(this).weatherCity;
+        changed();
+        refresh();
     }
 
     private void refresh() {
@@ -616,15 +746,22 @@ public final class LauncherSettingsActivity extends Activity {
         advancedChoice.setAlpha(animations ? 1f : 0.5f);
         String wallpaperCurrent = choices.getString(Config.WALLPAPER_CHOICE_KEY, null);
         wallpaperChoice.setText(getString(R.string.wallpaper_state,
-                "none".equals(wallpaperCurrent) ? getString(R.string.wallpaper_none)
+                spotlightEnabled ? getString(R.string.wallpaper_spotlight_active)
+                        : "none".equals(wallpaperCurrent) ? getString(R.string.wallpaper_none)
                         : wallpaperCurrent != null ? wallpaperCurrent
                         : getString(R.string.wallpaper_theme_default)));
+        spotlightEnabledChoice.setText(getString(R.string.spotlight_enabled_state,
+                getString(spotlightEnabled ? R.string.on : R.string.off)));
         tmdbApiKeyChoice.setText(getString(R.string.tmdb_api_key_state,
                 formatApiKeyState(SpotlightManager.getTmdbApiKey(this))));
         fanartApiKeyChoice.setText(getString(R.string.fanart_api_key_state,
                 formatApiKeyState(SpotlightManager.getFanartApiKey(this))));
         tvdbApiKeyChoice.setText(getString(R.string.tvdb_api_key_state,
                 formatApiKeyState(SpotlightManager.getTvdbApiKey(this))));
+        float apiAlpha = spotlightEnabled ? 1f : 0.5f;
+        tmdbApiKeyChoice.setAlpha(apiAlpha);
+        fanartApiKeyChoice.setAlpha(apiAlpha);
+        tvdbApiKeyChoice.setAlpha(apiAlpha);
         performanceModeChoice.setText(getString(R.string.performance_mode_state,
                 getString(performanceMode ? R.string.on : R.string.off)));
         dockBandChoice.setText(getString(R.string.dock_band_state,
@@ -668,6 +805,7 @@ public final class LauncherSettingsActivity extends Activity {
                 || choices.contains(Config.ALWAYS_SHOW_NAMES_KEY) || choices.contains(Config.SHOW_GREETING_KEY)
                 || choices.contains(Config.GREETING_NAME_KEY) || choices.contains(Config.SHOW_STATS_KEY)
                 || choices.contains(Config.SHOW_WEATHER_KEY) || choices.contains(Config.WEATHER_CITY_KEY)
+                || choices.contains(Config.SPOTLIGHT_ENABLED_KEY)
                 || choices.contains(Config.AMBIENT_GLOW_KEY) || choices.contains(Config.APP_GLOW_KEY)
                 || choices.contains(Config.LIBRARY_BUTTON_KEY) || choices.contains(Config.SHOW_LIBRARY_PILL_KEY);
     }

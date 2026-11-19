@@ -656,7 +656,19 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         cinematicWhiteFocus = cfg.cinematicWhiteFocus;
         heroArtAlpha = cfg.cinematicArt / 100f;
         if (cinematic) setUpCinematicShelf(cfg.cinematicScrim);
-        initSpotlightCarousel();
+        if (cfg.spotlightEnabled) {
+            initSpotlightCarousel();
+        } else {
+            if (hero != null) {
+                hero.setVisibility(View.GONE);
+                hero.setFocusable(false);
+                hero.setFocusableInTouchMode(false);
+            }
+            if (heroArt != null) heroArt.setVisibility(View.GONE);
+            if (heroArtNext != null) heroArtNext.setVisibility(View.GONE);
+            View scrim = findViewById(R.id.heroScrim);
+            if (scrim != null) scrim.setVisibility(View.GONE);
+        }
         greeting = findViewById(R.id.greeting);
         clockBlock = findViewById(R.id.leftBlock);
         clockRefresh = new ClockRefresh(clockBlock);

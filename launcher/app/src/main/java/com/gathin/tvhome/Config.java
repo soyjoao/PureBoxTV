@@ -53,6 +53,9 @@ final class Config {
     static final String SHOW_STATS_KEY = "show_stats";
     static final String SHOW_WEATHER_KEY = "show_weather";
     static final String WEATHER_CITY_KEY = "weather_city";
+    static final String WEATHER_LAT_KEY = "weather_lat";
+    static final String WEATHER_LON_KEY = "weather_lon";
+    static final String SPOTLIGHT_ENABLED_KEY = "spotlight_enabled";
     static final String AMBIENT_GLOW_KEY = "ambient_glow";
     static final String APP_GLOW_KEY = "app_glow";
     static final String LIBRARY_BUTTON_KEY = "library_button";
@@ -175,6 +178,8 @@ final class Config {
     final boolean showWeather;
     /** Optional city name for weather; empty uses automatic IP location. */
     final String weatherCity;
+    /** Spotlight carousel on Home; false hides it so the chosen wallpaper shows on the background. */
+    final boolean spotlightEnabled;
     /** game_day: the package of an add-on that publishes each team's next game (GameDay); empty = off. */
     final String gameDay;
     /** App library pill after the last Home row (config.xml app_library). */
@@ -320,7 +325,7 @@ final class Config {
                    boolean handleViewInputs, boolean tileMenu, boolean dockEvenPadding, boolean dockBand, boolean cinematicDots, boolean cinematicWhiteFocus, boolean wifiStatusColor, int cinematicScrim, int cinematicArt,
                    Map<String, Set<String>> wallpaperMoods, boolean gamepadPassthrough, boolean consumeVolumeKeys, boolean volumePausesFilter, boolean homeIgnoreChannelKeys, boolean powerOnHome, boolean homeLongPressHome, boolean wifiStatusWarnings, List<String> topBarApps, boolean showGreeting, boolean headerWhite, boolean clockWallpaper, int clockWallpaperDim, boolean clockGlow, String glassStyle, boolean singleRow, boolean dockBandAll, boolean lunarDate, int lunarUtcOffset, boolean dateBelowClock, boolean vpnPill, String locale, boolean powerOnHomeAlways, boolean inputsConnectedOnly, boolean inputsCecStateOnly,
                    int openOnStartNetworkWait, boolean openOnStartOnWake, boolean iconOnlyVpn, String clockFormat, boolean backOpensClock, boolean glowSnap,
-                   boolean settingsKeyClearTask, boolean showWeather, String weatherCity) {
+                   boolean settingsKeyClearTask, boolean showWeather, String weatherCity, boolean spotlightEnabled) {
         this.handleViewInputs = handleViewInputs;
         this.tileMenu = tileMenu;
         this.inputKeycodes = inputKeycodes;
@@ -384,6 +389,7 @@ final class Config {
         this.showStats = showStats;
         this.showWeather = showWeather;
         this.weatherCity = weatherCity;
+        this.spotlightEnabled = spotlightEnabled;
         this.gameDay = gameDay;
         this.appLibrary = appLibrary;
         this.appLibrarySelection = appLibrarySelection;
@@ -522,6 +528,7 @@ final class Config {
         boolean showStats = res.getBoolean(R.bool.show_stats);
         boolean showWeather = res.getBoolean(R.bool.show_weather);
         String weatherCity = res.getString(R.string.weather_city).trim();
+        boolean spotlightEnabled = res.getBoolean(R.bool.spotlight_enabled);
         String gameDay = res.getString(R.string.game_day).trim();
         boolean library = res.getBoolean(R.bool.app_library);
         boolean librarySelection = res.getBoolean(R.bool.app_library_selection);
@@ -641,6 +648,7 @@ final class Config {
             showStats = bool(json, "show_stats", showStats);
             showWeather = bool(json, SHOW_WEATHER_KEY, showWeather);
             weatherCity = string(json, WEATHER_CITY_KEY, weatherCity).trim();
+            spotlightEnabled = bool(json, SPOTLIGHT_ENABLED_KEY, spotlightEnabled);
             gameDay = string(json, "game_day", gameDay);
             library = bool(json, "app_library", library);
             librarySelection = bool(json, "app_library_selection", librarySelection);
@@ -727,6 +735,7 @@ final class Config {
         showStats = choices.getBoolean(SHOW_STATS_KEY, showStats);
         showWeather = choices.getBoolean(SHOW_WEATHER_KEY, showWeather);
         weatherCity = choices.getString(WEATHER_CITY_KEY, weatherCity).trim();
+        spotlightEnabled = choices.getBoolean(SPOTLIGHT_ENABLED_KEY, spotlightEnabled);
         ambientGlow = choices.getBoolean(AMBIENT_GLOW_KEY, ambientGlow);
         appGlow = choices.getBoolean(APP_GLOW_KEY, appGlow);
         libraryButton = choices.getBoolean(LIBRARY_BUTTON_KEY, libraryButton);
@@ -771,7 +780,7 @@ final class Config {
                 Math.max(0, Math.min(90, clockWallpaperDim)), clockGlow, glassStyle, singleRow && dockRow, dockBandAll, lunar, lunarOffset,
                 dateBelowClock, vpnPill, locale, powerOnHomeAlways, inputsConnectedOnly, inputsCecStateOnly,
                 Math.max(0, Math.min(600, openOnStartNetworkWait)), openOnStartOnWake, iconOnlyVpn, clockFormat, backOpensClock, glowSnap,
-                settingsKeyClearTask, showWeather, weatherCity);
+                settingsKeyClearTask, showWeather, weatherCity, spotlightEnabled);
     }
 
     /**

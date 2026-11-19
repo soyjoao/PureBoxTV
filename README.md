@@ -24,9 +24,11 @@ Projetado para oferecer visual moderno de cinema com **carrossel Spotlight em Fu
   - Abertura mais rápida da Home no boot adiando o upload de GPU do wallpaper para após o primeiro frame (PR #4175) e fallback interno de `wallpaper.jpg` quando o `/sdcard` ainda não montou no boot (Issue #4104).
   - Inclui a correção de vazamento de memória em `recreate()` da v3.5 (`ConnectivityManager` via `ApplicationContext` + remoção do `OnGlobalFocusChangeListener`).
 
-- **Tela de Configurações do Launcher expandida**
+- **Tela de Configurações redesenhada (Android Design for TV — 2 painéis)**
+  - Menu lateral em vidro escuro com **5 categorias** (*Aparência e Grade*, *Fundo e Spotlight*, *Relógio e Clima*, *Sistema e Desempenho*, *Geral e TV*) e zona segura de overscan.
+  - **Papel de parede + Carrossel Spotlight integrados:** permite ativar/desativar o Spotlight; escolher um papel de parede manualmente desativa o Spotlight automaticamente e aplica o fundo escolhido.
   - **Protetor de tela (Relógio):** seletor direto na TV (`5 minutos`, `15 minutos`, `30 minutos`, `60 minutos` ou `Desligado`, padrão `15 minutos`).
-  - **Clima no relógio (Open-Meteo):** temperatura e condição atual ao vivo abaixo do relógio (100% gratuito, sem chave de API), com detecção automática por IP ou cidade personalizada nas configurações.
+  - **Clima no relógio (Open-Meteo):** temperatura e condição atual ao vivo abaixo do relógio (100% gratuito, sem chave de API), com detecção automática por IP ou **busca interativa de cidades** com coordenadas exatas.
   - **Opacidade da faixa do dock** (`100%`, `70%`, `50%`, `30%`) funcionando também com o estilo vidro (*frosted glass*).
   - **Chaves de API editáveis direto pelo controle** (com mascaramento automático na lista para privacidade).
   - Controles rápidos na UI para faixa do dock, estilo vidro, nomes sempre visíveis, saudação, nome personalizado, estatísticas de CPU/RAM/Espaço, brilho ambiente, destaque colorido e botões da biblioteca de apps.
@@ -36,9 +38,13 @@ Projetado para oferecer visual moderno de cinema com **carrossel Spotlight em Fu
 
 ## Capturas de tela
 
-| Configurações do Launcher | Chaves de API & Opções | Protetor de tela (Relógio) |
-| :---: | :---: | :---: |
-| ![Configurações do Launcher](docs/screenshots/settings_top.png) | ![Chaves de API](docs/screenshots/settings_api.png) | ![Protetor de tela](docs/screenshots/clock_screensaver.png) |
+| Aparência e Grade | Fundo e Spotlight (APIs) |
+| :---: | :---: |
+| ![Aparência e Grade](docs/screenshots/settings_top.png) | ![Fundo e Spotlight](docs/screenshots/settings_api.png) |
+
+| Relógio e Clima | Protetor de tela (Relógio) |
+| :---: | :---: |
+| ![Relógio e Clima](docs/screenshots/settings_clock_weather.png) | ![Protetor de tela](docs/screenshots/clock_screensaver.png) |
 
 ---
 

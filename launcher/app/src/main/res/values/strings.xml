@@ -58,6 +58,8 @@
     <string name="wallpaper_none">None</string>
     <string name="wallpaper_applied">Wallpaper changed</string>
     <string name="wallpaper_theme_default">Theme default</string>
+    <string name="wallpaper_spotlight_active">Spotlight active</string>
+    <string name="spotlight_enabled_state">Spotlight carousel: %1$s</string>
     <string name="animations_state">Animations: %1$s</string>
     <string name="advanced_effects">Advanced effects</string>
     <string name="advanced_effects_state">Advanced effects: %1$s</string>
@@ -184,6 +186,15 @@
     <string name="weather_city_label">Weather city</string>
     <string name="weather_city_state">Weather city: %1$s</string>
     <string name="weather_city_auto">Automatic (IP)</string>
+    <string name="weather_city_search">Search</string>
+    <string name="weather_city_searching">Searching cities…</string>
+    <string name="weather_city_not_found">No cities found</string>
+    <string name="weather_city_pick_title">Choose city</string>
+    <string name="settings_cat_appearance">Appearance &amp; Grid</string>
+    <string name="settings_cat_background">Background &amp; Spotlight</string>
+    <string name="settings_cat_clock_weather">Clock &amp; Weather</string>
+    <string name="settings_cat_system">System &amp; Performance</string>
+    <string name="settings_cat_general">General &amp; TV</string>
     <string name="ambient_glow_state">Ambient color glow: %1$s</string>
     <string name="app_glow_state">Colored focus highlight: %1$s</string>
     <string name="library_button_state">App library button in top bar: %1$s</string>
