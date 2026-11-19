@@ -9,7 +9,10 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.graphics.Color;
 import android.view.View;
+import android.view.WindowManager;
+import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.LinearLayout;
 import android.widget.Toast;
@@ -34,17 +37,58 @@ public final class LauncherSettingsActivity extends Activity {
     private final TextView[] dockChoices = new TextView[DOCK_OPACITIES.length];
     private static final String[] CLOCK_FORMATS = {"system", "12", "24"};
     private final TextView[] clockChoices = new TextView[CLOCK_FORMATS.length];
+    private static final int[] IDLE_CLOCK_MINUTES = {5, 15, 30, 60, 0};
+    private final TextView[] idleClockChoices = new TextView[IDLE_CLOCK_MINUTES.length];
     private TextView wallpaperChoice;
     private TextView animationsChoice;
     private TextView advancedChoice;
+    private TextView tmdbApiKeyChoice;
+    private TextView fanartApiKeyChoice;
+    private TextView tvdbApiKeyChoice;
+    private TextView performanceModeChoice;
+    private TextView dockBandChoice;
+    private TextView dockGlassChoice;
+    private TextView alwaysShowNamesChoice;
+    private TextView showGreetingChoice;
+    private TextView greetingNameChoice;
+    private TextView showStatsChoice;
+    private TextView ambientGlowChoice;
+    private TextView appGlowChoice;
+    private TextView libraryButtonChoice;
+    private TextView showLibraryPillChoice;
     private TextView followThemeChoice;
     private TextView openOnStartChoice;
     private int columns;
     private int rowsBelowDock;
     private int dockOpacity;
     private String clockFormat;
+    private int idleClockMinutes;
     private boolean animations;
     private boolean advancedEffects;
+    private boolean dockBand;
+    private boolean dockGlass;
+    private boolean alwaysShowNames;
+    private boolean showGreeting;
+    private String greetingName;
+    private boolean showStats;
+    private boolean ambientGlow;
+    private boolean appGlow;
+    private boolean libraryButton;
+    private boolean showLibraryPill;
+    private boolean performanceMode;
+
+    private static int nearestDockOpacity(int value) {
+        int best = DOCK_OPACITIES[0];
+        int bestDiff = Math.abs(value - best);
+        for (int candidate : DOCK_OPACITIES) {
+            int diff = Math.abs(value - candidate);
+            if (diff < bestDiff) {
+                bestDiff = diff;
+                best = candidate;
+            }
+        }
+        return best;
+    }
 
     @Override
     protected void onCreate(Bundle state) {
@@ -60,10 +104,22 @@ public final class LauncherSettingsActivity extends Activity {
         });
         columns = config.columns;
         rowsBelowDock = config.rowsBelowDock;
-        dockOpacity = config.dockOpacity;
+        dockOpacity = nearestDockOpacity(config.dockOpacity);
         clockFormat = config.clockFormat;
+        idleClockMinutes = config.homeIdleClockMinutes;
         animations = config.animations;
         advancedEffects = config.animations && config.advancedEffects;
+        dockBand = config.dockBand;
+        dockGlass = config.dockGlass;
+        alwaysShowNames = config.alwaysShowNames;
+        showGreeting = config.showGreeting;
+        greetingName = config.greetingName;
+        showStats = config.showStats;
+        ambientGlow = config.ambientGlow;
+        appGlow = config.appGlow;
+        libraryButton = config.libraryButton;
+        showLibraryPill = config.showLibraryPill;
+        performanceMode = choices.getBoolean(Config.PERFORMANCE_MODE_KEY, true);
 
         int[] ids = {R.id.columns4, R.id.columns5, R.id.columns6, R.id.columns7};
         for (int i = 0; i < ids.length; i++) {
@@ -113,6 +169,18 @@ public final class LauncherSettingsActivity extends Activity {
                 refresh();
             });
         }
+        int[] idleClockIds = {R.id.idleClock5, R.id.idleClock15, R.id.idleClock30, R.id.idleClock60, R.id.idleClockOff};
+        for (int i = 0; i < idleClockIds.length; i++) {
+            final int value = IDLE_CLOCK_MINUTES[i];
+            idleClockChoices[i] = findViewById(idleClockIds[i]);
+            idleClockChoices[i].setOnClickListener(v -> {
+                if (idleClockMinutes == value) return;
+                idleClockMinutes = value;
+                choices.edit().putInt(Config.IDLE_CLOCK_MINUTES_KEY, value).apply();
+                changed();
+                refresh();
+            });
+        }
         // Mirror text alignment without globally opting the launcher into RTL. Numeric rows
         // still need explicit ordering in Android's no-supportsRtl compatibility mode.
         if (getResources().getBoolean(R.bool.rtl_menu_bar))
@@ -122,6 +190,7 @@ public final class LauncherSettingsActivity extends Activity {
             reverseRow(rowChoices);
             reverseRow(dockChoices);
             reverseRow(clockChoices);
+            reverseRow(idleClockChoices);
         }
         wallpaperChoice = findViewById(R.id.wallpaperChoice);
         wallpaperChoice.setOnClickListener(v -> showWallpaperPicker());
@@ -147,6 +216,99 @@ public final class LauncherSettingsActivity extends Activity {
                         .show();
             }
         });
+        tmdbApiKeyChoice = findViewById(R.id.tmdbApiKeyChoice);
+        tmdbApiKeyChoice.setOnClickListener(v -> showApiKeyDialog(
+                R.string.tmdb_api_key_label,
+                R.string.tmdb_api_key_saved,
+                Config.TMDB_API_KEY,
+                SpotlightManager.DEFAULT_TMDB_API_KEY,
+                SpotlightManager.getTmdbApiKey(this)));
+        fanartApiKeyChoice = findViewById(R.id.fanartApiKeyChoice);
+        fanartApiKeyChoice.setOnClickListener(v -> showApiKeyDialog(
+                R.string.fanart_api_key_label,
+                R.string.fanart_api_key_saved,
+                Config.FANART_API_KEY,
+                SpotlightManager.DEFAULT_FANART_API_KEY,
+                SpotlightManager.getFanartApiKey(this)));
+        tvdbApiKeyChoice = findViewById(R.id.tvdbApiKeyChoice);
+        tvdbApiKeyChoice.setOnClickListener(v -> showApiKeyDialog(
+                R.string.tvdb_api_key_label,
+                R.string.tvdb_api_key_saved,
+                Config.TVDB_API_KEY,
+                SpotlightManager.DEFAULT_TVDB_API_KEY,
+                SpotlightManager.getTvdbApiKey(this)));
+        performanceModeChoice = findViewById(R.id.performanceModeChoice);
+        performanceModeChoice.setOnClickListener(v -> {
+            performanceMode = !performanceMode;
+            choices.edit().putBoolean(Config.PERFORMANCE_MODE_KEY, performanceMode).apply();
+            MainActivity.applyPerformanceMode(this);
+            refresh();
+        });
+        dockBandChoice = findViewById(R.id.dockBandChoice);
+        dockBandChoice.setOnClickListener(v -> {
+            dockBand = !dockBand;
+            choices.edit().putBoolean(Config.DOCK_BAND_KEY, dockBand).apply();
+            changed();
+            refresh();
+        });
+        dockGlassChoice = findViewById(R.id.dockGlassChoice);
+        dockGlassChoice.setOnClickListener(v -> {
+            dockGlass = !dockGlass;
+            choices.edit().putBoolean(Config.DOCK_GLASS_KEY, dockGlass).apply();
+            changed();
+            refresh();
+        });
+        alwaysShowNamesChoice = findViewById(R.id.alwaysShowNamesChoice);
+        alwaysShowNamesChoice.setOnClickListener(v -> {
+            alwaysShowNames = !alwaysShowNames;
+            choices.edit().putBoolean(Config.ALWAYS_SHOW_NAMES_KEY, alwaysShowNames).apply();
+            changed();
+            refresh();
+        });
+        showGreetingChoice = findViewById(R.id.showGreetingChoice);
+        showGreetingChoice.setOnClickListener(v -> {
+            showGreeting = !showGreeting;
+            choices.edit().putBoolean(Config.SHOW_GREETING_KEY, showGreeting).apply();
+            changed();
+            refresh();
+        });
+        greetingNameChoice = findViewById(R.id.greetingNameChoice);
+        greetingNameChoice.setOnClickListener(v -> showGreetingNameDialog());
+        showStatsChoice = findViewById(R.id.showStatsChoice);
+        showStatsChoice.setOnClickListener(v -> {
+            showStats = !showStats;
+            choices.edit().putBoolean(Config.SHOW_STATS_KEY, showStats).apply();
+            changed();
+            refresh();
+        });
+        ambientGlowChoice = findViewById(R.id.ambientGlowChoice);
+        ambientGlowChoice.setOnClickListener(v -> {
+            ambientGlow = !ambientGlow;
+            choices.edit().putBoolean(Config.AMBIENT_GLOW_KEY, ambientGlow).apply();
+            changed();
+            refresh();
+        });
+        appGlowChoice = findViewById(R.id.appGlowChoice);
+        appGlowChoice.setOnClickListener(v -> {
+            appGlow = !appGlow;
+            choices.edit().putBoolean(Config.APP_GLOW_KEY, appGlow).apply();
+            changed();
+            refresh();
+        });
+        libraryButtonChoice = findViewById(R.id.libraryButtonChoice);
+        libraryButtonChoice.setOnClickListener(v -> {
+            libraryButton = !libraryButton;
+            choices.edit().putBoolean(Config.LIBRARY_BUTTON_KEY, libraryButton).apply();
+            changed();
+            refresh();
+        });
+        showLibraryPillChoice = findViewById(R.id.showLibraryPillChoice);
+        showLibraryPillChoice.setOnClickListener(v -> {
+            showLibraryPill = !showLibraryPill;
+            choices.edit().putBoolean(Config.SHOW_LIBRARY_PILL_KEY, showLibraryPill).apply();
+            changed();
+            refresh();
+        });
         openOnStartChoice = findViewById(R.id.openOnStartChoice);
         if (config.openOnStartChoice) {
             openOnStartChoice.setVisibility(View.VISIBLE);
@@ -157,14 +319,31 @@ public final class LauncherSettingsActivity extends Activity {
             if (!hasOnTvChoices()) return;
             choices.edit().remove("columns").remove(Config.ROWS_BELOW_DOCK_KEY).remove("animations")
                     .remove("advanced_effects").remove(Config.WALLPAPER_CHOICE_KEY)
-                    .remove(Config.DOCK_OPACITY_KEY).remove(Config.CLOCK_FORMAT_KEY).remove(OpenOnStart.KEY).commit();
+                    .remove(Config.DOCK_OPACITY_KEY).remove(Config.CLOCK_FORMAT_KEY)
+                    .remove(Config.IDLE_CLOCK_MINUTES_KEY).remove(OpenOnStart.KEY)
+                    .remove(Config.DOCK_BAND_KEY).remove(Config.DOCK_GLASS_KEY)
+                    .remove(Config.ALWAYS_SHOW_NAMES_KEY).remove(Config.SHOW_GREETING_KEY)
+                    .remove(Config.GREETING_NAME_KEY).remove(Config.SHOW_STATS_KEY)
+                    .remove(Config.AMBIENT_GLOW_KEY).remove(Config.APP_GLOW_KEY)
+                    .remove(Config.LIBRARY_BUTTON_KEY).remove(Config.SHOW_LIBRARY_PILL_KEY).commit();
             Config current = Config.load(this);
             columns = current.columns;
             rowsBelowDock = current.rowsBelowDock;
-            dockOpacity = current.dockOpacity;
+            dockOpacity = nearestDockOpacity(current.dockOpacity);
             clockFormat = current.clockFormat;
+            idleClockMinutes = current.homeIdleClockMinutes;
             animations = current.animations;
             advancedEffects = current.animations && current.advancedEffects;
+            dockBand = current.dockBand;
+            dockGlass = current.dockGlass;
+            alwaysShowNames = current.alwaysShowNames;
+            showGreeting = current.showGreeting;
+            greetingName = current.greetingName;
+            showStats = current.showStats;
+            ambientGlow = current.ambientGlow;
+            appGlow = current.appGlow;
+            libraryButton = current.libraryButton;
+            showLibraryPill = current.showLibraryPill;
             changed();
             refresh();
         });
@@ -292,6 +471,73 @@ public final class LauncherSettingsActivity extends Activity {
         refresh();
     }
 
+    private void showApiKeyDialog(int titleRes, int savedToastRes, String prefKey, String defaultKey, String currentKey) {
+        float density = getResources().getDisplayMetrics().density;
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle(titleRes);
+        final EditText input = new EditText(this);
+        input.setText(currentKey);
+        input.setSingleLine(true);
+        input.setTextColor(Color.WHITE);
+        int pad = (int) (18 * density);
+        input.setPadding(pad, pad, pad, pad);
+        builder.setView(input);
+        builder.setPositiveButton(R.string.save, (d, which) -> {
+            String key = input.getText().toString().trim();
+            if (key.isEmpty() || defaultKey.equals(key)) {
+                choices.edit().remove(prefKey).apply();
+            } else {
+                choices.edit().putString(prefKey, key).apply();
+            }
+            changed();
+            Toast.makeText(this, savedToastRes, Toast.LENGTH_SHORT).show();
+            refresh();
+        });
+        builder.setNeutralButton(R.string.reset, (d, which) -> {
+            choices.edit().remove(prefKey).apply();
+            changed();
+            Toast.makeText(this, savedToastRes, Toast.LENGTH_SHORT).show();
+            refresh();
+        });
+        builder.setNegativeButton(android.R.string.cancel, null);
+        AlertDialog dialog = builder.create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+        }
+        dialog.show();
+    }
+
+    private void showGreetingNameDialog() {
+        float density = getResources().getDisplayMetrics().density;
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle(R.string.greeting_name_label);
+        final EditText input = new EditText(this);
+        input.setText(greetingName);
+        input.setSingleLine(true);
+        input.setTextColor(Color.WHITE);
+        int pad = (int) (18 * density);
+        input.setPadding(pad, pad, pad, pad);
+        builder.setView(input);
+        builder.setPositiveButton(R.string.save, (d, which) -> {
+            greetingName = input.getText().toString().trim();
+            choices.edit().putString(Config.GREETING_NAME_KEY, greetingName).apply();
+            changed();
+            refresh();
+        });
+        builder.setNeutralButton(R.string.reset, (d, which) -> {
+            choices.edit().remove(Config.GREETING_NAME_KEY).apply();
+            greetingName = Config.load(this).greetingName;
+            changed();
+            refresh();
+        });
+        builder.setNegativeButton(android.R.string.cancel, null);
+        AlertDialog dialog = builder.create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+        }
+        dialog.show();
+    }
+
     private void refresh() {
         for (int i = 0; i < columnChoices.length; i++) {
             columnChoices[i].setSelected(columns == i + 4);
@@ -305,6 +551,9 @@ public final class LauncherSettingsActivity extends Activity {
         for (int i = 0; i < clockChoices.length; i++) {
             clockChoices[i].setSelected(CLOCK_FORMATS[i].equals(clockFormat));
         }
+        for (int i = 0; i < idleClockChoices.length; i++) {
+            idleClockChoices[i].setSelected(idleClockMinutes == IDLE_CLOCK_MINUTES[i]);
+        }
         animationsChoice.setText(getString(R.string.animations_state,
                 getString(animations ? R.string.on : R.string.off)));
         advancedChoice.setText(getString(R.string.advanced_effects_state,
@@ -316,6 +565,33 @@ public final class LauncherSettingsActivity extends Activity {
                 "none".equals(wallpaperCurrent) ? getString(R.string.wallpaper_none)
                         : wallpaperCurrent != null ? wallpaperCurrent
                         : getString(R.string.wallpaper_theme_default)));
+        tmdbApiKeyChoice.setText(getString(R.string.tmdb_api_key_state, SpotlightManager.getTmdbApiKey(this)));
+        fanartApiKeyChoice.setText(getString(R.string.fanart_api_key_state, SpotlightManager.getFanartApiKey(this)));
+        tvdbApiKeyChoice.setText(getString(R.string.tvdb_api_key_state, SpotlightManager.getTvdbApiKey(this)));
+        performanceModeChoice.setText(getString(R.string.performance_mode_state,
+                getString(performanceMode ? R.string.on : R.string.off)));
+        dockBandChoice.setText(getString(R.string.dock_band_state,
+                getString(dockBand ? R.string.on : R.string.off)));
+        dockGlassChoice.setText(getString(R.string.dock_glass_state,
+                getString(dockGlass ? R.string.on : R.string.off)));
+        dockGlassChoice.setAlpha(dockBand ? 1f : 0.5f);
+        alwaysShowNamesChoice.setText(getString(R.string.always_show_names_state,
+                getString(alwaysShowNames ? R.string.on : R.string.off)));
+        showGreetingChoice.setText(getString(R.string.show_greeting_state,
+                getString(showGreeting ? R.string.on : R.string.off)));
+        greetingNameChoice.setText(getString(R.string.greeting_name_state,
+                greetingName.isEmpty() ? getString(R.string.off) : greetingName));
+        greetingNameChoice.setAlpha(showGreeting ? 1f : 0.5f);
+        showStatsChoice.setText(getString(R.string.show_stats_state,
+                getString(showStats ? R.string.on : R.string.off)));
+        ambientGlowChoice.setText(getString(R.string.ambient_glow_state,
+                getString(ambientGlow ? R.string.on : R.string.off)));
+        appGlowChoice.setText(getString(R.string.app_glow_state,
+                getString(appGlow ? R.string.on : R.string.off)));
+        libraryButtonChoice.setText(getString(R.string.library_button_state,
+                getString(libraryButton ? R.string.on : R.string.off)));
+        showLibraryPillChoice.setText(getString(R.string.show_library_pill_state,
+                getString(showLibraryPill ? R.string.on : R.string.off)));
         openOnStartChoice.setText(getString(R.string.open_on_start_state, openOnStartLabel()));
         followThemeChoice.setSelected(!hasOnTvChoices());
     }
@@ -324,7 +600,13 @@ public final class LauncherSettingsActivity extends Activity {
         return choices.contains("columns") || choices.contains(Config.ROWS_BELOW_DOCK_KEY)
                 || choices.contains("animations") || choices.contains("advanced_effects")
                 || choices.contains(Config.WALLPAPER_CHOICE_KEY) || choices.contains(Config.DOCK_OPACITY_KEY)
-                || choices.contains(Config.CLOCK_FORMAT_KEY) || choices.contains(OpenOnStart.KEY);
+                || choices.contains(Config.CLOCK_FORMAT_KEY) || choices.contains(Config.IDLE_CLOCK_MINUTES_KEY)
+                || choices.contains(OpenOnStart.KEY)
+                || choices.contains(Config.DOCK_BAND_KEY) || choices.contains(Config.DOCK_GLASS_KEY)
+                || choices.contains(Config.ALWAYS_SHOW_NAMES_KEY) || choices.contains(Config.SHOW_GREETING_KEY)
+                || choices.contains(Config.GREETING_NAME_KEY) || choices.contains(Config.SHOW_STATS_KEY)
+                || choices.contains(Config.AMBIENT_GLOW_KEY) || choices.contains(Config.APP_GLOW_KEY)
+                || choices.contains(Config.LIBRARY_BUTTON_KEY) || choices.contains(Config.SHOW_LIBRARY_PILL_KEY);
     }
 
     private void open(Intent intent) {

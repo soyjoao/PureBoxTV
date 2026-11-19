@@ -44,6 +44,21 @@ final class Config {
     static final String WALLPAPER_CHOICE_KEY = "wallpaper_choice";
     static final String DOCK_OPACITY_KEY = "dock_opacity";
     static final String CLOCK_FORMAT_KEY = "clock_format";
+    static final String IDLE_CLOCK_MINUTES_KEY = "home_idle_clock_minutes";
+    static final String DOCK_BAND_KEY = "dock_band";
+    static final String DOCK_GLASS_KEY = "dock_glass";
+    static final String ALWAYS_SHOW_NAMES_KEY = "always_show_names";
+    static final String SHOW_GREETING_KEY = "show_greeting";
+    static final String GREETING_NAME_KEY = "greeting_name";
+    static final String SHOW_STATS_KEY = "show_stats";
+    static final String AMBIENT_GLOW_KEY = "ambient_glow";
+    static final String APP_GLOW_KEY = "app_glow";
+    static final String LIBRARY_BUTTON_KEY = "library_button";
+    static final String SHOW_LIBRARY_PILL_KEY = "show_library_pill";
+    static final String TMDB_API_KEY = "tmdb_api_key";
+    static final String FANART_API_KEY = "fanart_api_key";
+    static final String TVDB_API_KEY = "tvdb_api_key";
+    static final String PERFORMANCE_MODE_KEY = "performance_mode";
     /**
      * Counts the changes made in Launcher settings. Home remembers the count it was built with and rebuilds on
      * resume when it differs, however the settings were left (see MainActivity#onResume).
@@ -687,6 +702,17 @@ final class Config {
         int dockOpacity = json == null ? 100 : integer(json, "dock_opacity", 100, 30, 100);
         dockOpacity = chosenDockOpacity(choices.getInt(DOCK_OPACITY_KEY, -1), dockOpacity);
         clockFormat = choices.getString(CLOCK_FORMAT_KEY, clockFormat);
+        idleClockMinutes = chosenIdleClockMinutes(choices.getInt(IDLE_CLOCK_MINUTES_KEY, -1), idleClockMinutes);
+        dockBand = choices.getBoolean(DOCK_BAND_KEY, dockBand);
+        dockGlass = choices.getBoolean(DOCK_GLASS_KEY, dockGlass);
+        alwaysShowNames = choices.getBoolean(ALWAYS_SHOW_NAMES_KEY, alwaysShowNames);
+        showGreeting = choices.getBoolean(SHOW_GREETING_KEY, showGreeting);
+        greetingName = choices.getString(GREETING_NAME_KEY, greetingName).trim();
+        showStats = choices.getBoolean(SHOW_STATS_KEY, showStats);
+        ambientGlow = choices.getBoolean(AMBIENT_GLOW_KEY, ambientGlow);
+        appGlow = choices.getBoolean(APP_GLOW_KEY, appGlow);
+        libraryButton = choices.getBoolean(LIBRARY_BUTTON_KEY, libraryButton);
+        showLibraryPill = choices.getBoolean(SHOW_LIBRARY_PILL_KEY, showLibraryPill);
         String wallpaperOrder = json == null ? WallpaperRotation.ORDER_SHUFFLE
                 : string(json, "wallpaper_order", WallpaperRotation.ORDER_SHUFFLE);
         // An unknown order must not silently change how an existing collection rotates.
@@ -771,18 +797,24 @@ final class Config {
             SharedPreferences.Editor editor = choices.edit();
             if (!"absent".equals(token)) editor.remove("columns").remove("animations")
                     .remove("advanced_effects").remove(ROWS_BELOW_DOCK_KEY).remove(WALLPAPER_CHOICE_KEY)
-                    .remove(DOCK_OPACITY_KEY).remove(CLOCK_FORMAT_KEY);
+                    .remove(DOCK_OPACITY_KEY).remove(CLOCK_FORMAT_KEY).remove(IDLE_CLOCK_MINUTES_KEY);
             editor.putString(THEME_SIGNATURE_KEY, signature).commit();
         } else if (!seen.equals(signature)) {
             choices.edit().remove("columns").remove("animations").remove("advanced_effects")
                     .remove(ROWS_BELOW_DOCK_KEY).remove(WALLPAPER_CHOICE_KEY).remove(DOCK_OPACITY_KEY)
-                    .remove(CLOCK_FORMAT_KEY).putString(THEME_SIGNATURE_KEY, signature).commit();
+                    .remove(CLOCK_FORMAT_KEY).remove(IDLE_CLOCK_MINUTES_KEY)
+                    .putString(THEME_SIGNATURE_KEY, signature).commit();
         }
     }
 
     /** The dock band opacity chosen in Launcher settings, or the theme's when none (or an out-of-range one) is saved. */
     static int chosenDockOpacity(int chosen, int theme) {
         return chosen >= 30 && chosen <= 100 ? chosen : theme;
+    }
+
+    /** The idle clock timeout (in minutes) chosen in Launcher settings, or the theme's when none (or an out-of-range one) is saved. */
+    static int chosenIdleClockMinutes(int chosen, int theme) {
+        return chosen >= 0 && chosen <= 1440 ? chosen : theme;
     }
 
     private static String fileStamp(File file) {

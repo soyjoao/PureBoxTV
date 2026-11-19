@@ -283,6 +283,14 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         // Some system apps declare two leanback entry points under one name (Sony's Timers & Clock on the
         // BRAVIA VU31), which would show as two identical tiles: keep the first per package and label.
         Set<String> seen = new HashSet<>();
+        android.content.SharedPreferences userLabels = ctx.getSharedPreferences("user_labels", Context.MODE_PRIVATE);
+        java.io.File extDir = ctx.getExternalFilesDir(null);
+        java.io.File bannersDir = new java.io.File(extDir != null ? extDir : new java.io.File("/sdcard/Android/data/com.gathin.tvhome/files"), "banners");
+        Set<String> availableCustomBanners = new HashSet<>();
+        String[] bannerFiles = bannersDir.isDirectory() ? bannersDir.list() : null;
+        if (bannerFiles != null) {
+            Collections.addAll(availableCustomBanners, bannerFiles);
+        }
         for (ResolveInfo ri : found) {
             if (ri.activityInfo == null) continue;
             String pkg = ri.activityInfo.packageName;
@@ -293,13 +301,24 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             if (card != null && !card.component.equals(component)) continue;   // the card stands in for this tile
             // Same cleaner as the card prompt: an app label with a bidi override or line separator must not
             // redraw the tile name as something else (#117).
+            String customLabel = userLabels.getString(pkg, null);
             String label = card != null ? card.label : Cards.cleanLabel(
-                    appLabels.containsKey(pkg) ? appLabels.get(pkg) : String.valueOf(ri.loadLabel(pm)), pkg);
+                    customLabel != null ? customLabel : appLabels.containsKey(pkg) ? appLabels.get(pkg) : String.valueOf(ri.loadLabel(pm)), pkg);
             if (!seen.add(pkg + '\n' + label)) continue;
             Drawable banner = null;
             // uniform_tiles draws the icon, so an app's banner is never loaded. A module card keeps its banner.
             if (!(uniformTiles && card == null)) {
-                banner = bundledBanner(appBanners.get(pkg));
+                String bannerFileName = pkg + ".png";
+                if (availableCustomBanners.contains(bannerFileName)) {
+                    try {
+                        java.io.File customBanner = new java.io.File(bannersDir, bannerFileName);
+                        Bitmap bmp = SpotlightManager.decodeSampledBitmap(customBanner.getAbsolutePath(), 640, 360);
+                        if (bmp != null) {
+                            banner = new android.graphics.drawable.BitmapDrawable(ctx.getResources(), bmp);
+                        }
+                    } catch (Exception ignored) {}
+                }
+                if (banner == null) banner = bundledBanner(appBanners.get(pkg));
                 if (banner == null) banner = iconTiles.contains(pkg) ? iconBanner(ri.loadIcon(pm)) : loadBanner(pm, ri);
             }
             // The icon is only drawn (and sampled for the glow) when there is no banner, so a tile with a

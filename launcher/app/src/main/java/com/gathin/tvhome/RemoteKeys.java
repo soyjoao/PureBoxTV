@@ -432,7 +432,7 @@ final class RemoteKeys {
             try {
                 ctx.startActivity(new Intent(ctx, MainActivity.class).setAction(MainActivity.ACTION_VIEW_INPUTS)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-            } catch (ActivityNotFoundException ignored) {
+            } catch (ActivityNotFoundException | SecurityException ignored) {
             }
             return;
         }
@@ -463,7 +463,7 @@ final class RemoteKeys {
             }
             try {
                 ctx.startActivity(view);
-            } catch (ActivityNotFoundException ignored) {
+            } catch (ActivityNotFoundException | SecurityException ignored) {
             }
             return;
         }

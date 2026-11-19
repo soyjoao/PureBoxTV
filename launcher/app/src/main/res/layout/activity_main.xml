@@ -12,23 +12,28 @@
         android:layout_height="match_parent"
         android:importantForAccessibility="no" />
 
-    <!-- Cinematic top shelf (cinematic_home): the focused dock app's artwork, a few pixels across and
-         stretched over the screen, which softens it like a blur without the cost of one. Hidden otherwise. -->
-    <ImageView
-        android:id="@+id/heroArt"
+    <!-- Cinematic top shelf / Spotlight Carousel: full-screen backdrops with ping-pong cross-fade. -->
+    <FrameLayout
+        android:id="@+id/heroArtContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:scaleType="fitXY"
-        android:alpha="0"
-        android:visibility="gone"
-        android:importantForAccessibility="no" />
+        android:importantForAccessibility="no">
 
-    <!-- Ambient glow in the colour of the focused dock app. -->
-    <View
-        android:id="@+id/ambient"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:alpha="0" />
+        <ImageView
+            android:id="@+id/heroArt"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:importantForAccessibility="no" />
+
+        <ImageView
+            android:id="@+id/heroArtNext"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:alpha="0"
+            android:importantForAccessibility="no" />
+    </FrameLayout>
 
     <!-- Race-weekend panel (a theme's race_calendar, see RaceWeekend): in the free space under the clock,
          shown only from shortly before a weekend's first session until the race is over. Updated once a
@@ -113,6 +118,13 @@
         android:visibility="gone"
         android:importantForAccessibility="no" />
 
+    <!-- Ambient glow in the colour of the focused dock app. -->
+    <View
+        android:id="@+id/ambient"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:alpha="0" />
+
     <!-- Top shelf: the focused dock app's name, positioned above the dock in code. -->
     <LinearLayout
         android:id="@+id/hero"
@@ -120,14 +132,37 @@
         android:layout_height="wrap_content"
         android:layout_marginStart="68dp"
         android:orientation="vertical"
-        android:alpha="0">
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:clickable="true"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:padding="8dp">
+
+        <TextView
+            android:id="@+id/heroBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="3dp"
+            android:paddingBottom="3dp"
+            android:textSize="12sp"
+            android:textColor="#FFFFFF"
+            android:textAllCaps="true"
+            android:fontFamily="@string/font_medium"
+            android:letterSpacing="0.08"
+            android:visibility="gone" />
 
         <TextView
             android:id="@+id/heroName"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:maxWidth="680dp"
+            android:ellipsize="end"
             android:textColor="#FFFFFFFF"
-            android:textSize="48sp"
+            android:textSize="44sp"
             android:fontFamily="@string/font_light"
             android:letterSpacing="-0.02"
             android:includeFontPadding="false"
@@ -139,21 +174,56 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="4dp"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="6dp"
             android:singleLine="true"
-            android:textColor="#B3FFFFFF"
-            android:textSize="15sp"
+            android:textColor="#D9FFFFFF"
+            android:textSize="15.5sp"
             android:fontFamily="@string/font_light"
             android:visibility="gone" />
 
-        <LinearLayout
-            android:id="@+id/heroDots"
-            android:layout_width="wrap_content"
-            android:layout_height="6dp"
+        <TextView
+            android:id="@+id/heroOverview"
+            android:layout_width="480dp"
+            android:layout_height="38dp"
             android:layout_marginStart="4dp"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="6dp"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:lineSpacingExtra="2dp"
+            android:textColor="#CCFFFFFF"
+            android:textSize="13.5sp"
+            android:fontFamily="@string/font_regular"
+            android:visibility="invisible" />
+
+        <LinearLayout
+            android:id="@+id/heroDotsRow"
+            android:layout_width="wrap_content"
+            android:layout_height="18dp"
+            android:layout_marginStart="4dp"
+            android:layout_marginTop="12dp"
             android:orientation="horizontal"
-            android:visibility="gone" />
+            android:gravity="center_vertical">
+
+            <LinearLayout
+                android:id="@+id/heroDots"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/heroRemoveHint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="14dp"
+                android:singleLine="true"
+                android:text="Aperte OK para abrir, mantenha pressionando para remover"
+                android:textColor="#55FFFFFF"
+                android:textSize="12.5sp"
+                android:fontFamily="@string/font_regular"
+                android:visibility="gone" />
+        </LinearLayout>
     </LinearLayout>
 
     <LinearLayout
@@ -215,6 +285,7 @@
                         android:textSize="52sp"
                         android:fontFamily="@string/font_light"
                         android:letterSpacing="-0.04"
+                        android:fontFeatureSettings="tnum"
                         android:includeFontPadding="false" />
 
                     <TextClock

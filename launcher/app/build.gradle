@@ -2,9 +2,23 @@ plugins {
     id 'com.android.application'
 }
 
+def localProps = new Properties()
+def localPropsFile = rootProject.file('local.properties')
+if (localPropsFile.isFile()) {
+    localPropsFile.withInputStream { localProps.load(it) }
+}
+def propStr = { String key ->
+    def v = (localProps.getProperty(key, '') ?: '').replace('\\', '\\\\').replace('"', '\\"')
+    return "\"${v}\""
+}
+
 android {
     namespace 'com.gathin.tvhome'
     compileSdk 34
+
+    buildFeatures {
+        buildConfig true
+    }
 
     defaultConfig {
         // Opt-in identity for firmware with a package-name HOME allowlist.
@@ -15,6 +29,9 @@ android {
         targetSdk 34
         versionCode 13
         versionName '3.4'
+        buildConfigField 'String', 'DEFAULT_TMDB_API_KEY', propStr('tmdb.api.key')
+        buildConfigField 'String', 'DEFAULT_FANART_API_KEY', propStr('fanart.api.key')
+        buildConfigField 'String', 'DEFAULT_TVDB_API_KEY', propStr('tvdb.api.key')
     }
 
     buildTypes {

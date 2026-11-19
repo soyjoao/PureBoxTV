@@ -3,6 +3,10 @@ package com.gathin.tvhome;
 import android.animation.ArgbEvaluator;
 import android.animation.ValueAnimator;
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.widget.EditText;
+import android.view.WindowManager;
+
 import android.app.Dialog;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
@@ -179,6 +183,40 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** config.xml glow_snap: the glow takes a new colour in one frame instead of the dip-and-fade. */
     private boolean glowSnap;
     private boolean heroShown;
+
+    private ImageView heroArtNext;
+    private TextView heroBadge;
+    private TextView heroOverview;
+    private TextView heroRemoveHint;
+    private SpotlightManager spotlightManager;
+    private int spotlightIndex = 0;
+    private boolean spotlightFocused = false;
+    private boolean spotlightOkDown = false;
+    private boolean spotlightOkHeld = false;
+    private static final long SPOTLIGHT_ROTATE_MS = 11_000L;
+    private final Handler spotlightHandler = new Handler(Looper.getMainLooper());
+    private final Runnable spotlightHoldOkRunnable = this::removeCurrentSpotlight;
+    private final Runnable spotlightAutoRotate = new Runnable() {
+        @Override
+        public void run() {
+            if (!spotlightFocused && spotlightManager != null) {
+                List<SpotlightManager.Item> list = spotlightManager.getItems();
+                if (list != null && list.size() > 1) {
+                    final int prevIndex = spotlightIndex;
+                    spotlightIndex = (spotlightIndex + 1) % list.size();
+                    showSpotlight(spotlightIndex, true);
+                    // Rotate the previous item's backdrop in the background after the crossfade completes,
+                    // so on the next round of the carousel it displays a fresh cover from Fanart.tv / TheTVDB / TMDB!
+                    spotlightHandler.postDelayed(() -> {
+                        if (spotlightManager != null) {
+                            spotlightManager.rotateBackdropForIndex(prevIndex);
+                        }
+                    }, 1500L);
+                }
+            }
+            spotlightHandler.postDelayed(this, SPOTLIGHT_ROTATE_MS);
+        }
+    };
     private boolean animations;
     private boolean advancedEffects;
     private TextView greeting;
@@ -440,11 +478,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         @Override
         public void run() {
             updateGreeting();
-            updatePanel();
+            if ((raceCalendar != null && !raceCalendar.isEmpty()) || gameDay != null) {
+                updatePanel();
+            }
             // The pill follows the network callbacks and each return to Home; only the festive light follows the
             // signal level, so only it needs this minute's binder calls (about 7 ms on the UI thread).
             if (festive) updateWifiLabel();
-            sky.update();
+            if (sky != null && sky.getVisibility() == View.VISIBLE) sky.update();
             wallpaperPlayer.update();
             handler.postDelayed(this, MINUTE_MS);
         }
@@ -455,10 +495,72 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private String clockFormat = "system";
     private java.util.Map<Integer, String> homeHoldAppKeys = java.util.Collections.emptyMap();
 
+    static void applyPerformanceMode(Context context) {
+        final Context appCtx = context.getApplicationContext();
+        final boolean enabled = appCtx.getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE)
+                .getBoolean(Config.PERFORMANCE_MODE_KEY, true);
+        new Thread(() -> {
+            try {
+                File dir = appCtx.getExternalFilesDir(null);
+                if (dir == null) dir = appCtx.getFilesDir();
+                File disabledFlag = new File(dir, "perf_mode_disabled");
+                if (enabled) {
+                    if (disabledFlag.exists()) disabledFlag.delete();
+                } else {
+                    try (java.io.FileOutputStream fos = new java.io.FileOutputStream(disabledFlag)) {
+                        fos.write('1');
+                    }
+                }
+                File scriptFile = new File(dir, "perf_apply.sh");
+                String script;
+                if (enabled) {
+                    script = "for c in /sys/devices/system/cpu/cpu0/cpufreq /sys/devices/system/cpu/cpu1/cpufreq /sys/devices/system/cpu/cpu2/cpufreq /sys/devices/system/cpu/cpu3/cpufreq; do\n"
+                            + "  if [ -d \"$c\" ]; then\n"
+                            + "    chmod 644 \"$c/scaling_governor\" \"$c/scaling_min_freq\" \"$c/scaling_max_freq\" 2>/dev/null\n"
+                            + "    echo performance > \"$c/scaling_governor\" 2>/dev/null\n"
+                            + "    echo 1296000 > \"$c/scaling_min_freq\" 2>/dev/null\n"
+                            + "    echo 1296000 > \"$c/scaling_max_freq\" 2>/dev/null\n"
+                            + "  fi\n"
+                            + "done\n"
+                            + "if [ -d /sys/class/devfreq/gpu ]; then\n"
+                            + "  echo 600000000 > /sys/class/devfreq/gpu/min_freq 2>/dev/null\n"
+                            + "  echo 600000000 > /sys/class/devfreq/gpu/max_freq 2>/dev/null\n"
+                            + "fi\n"
+                            + "echo 40 > /proc/sys/vm/swappiness 2>/dev/null\n"
+                            + "echo 50 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null\n"
+                            + "echo 15 > /proc/sys/vm/dirty_ratio 2>/dev/null\n"
+                            + "echo 5 > /proc/sys/vm/dirty_background_ratio 2>/dev/null\n";
+                } else {
+                    script = "for c in /sys/devices/system/cpu/cpu0/cpufreq /sys/devices/system/cpu/cpu1/cpufreq /sys/devices/system/cpu/cpu2/cpufreq /sys/devices/system/cpu/cpu3/cpufreq; do\n"
+                            + "  if [ -d \"$c\" ]; then\n"
+                            + "    chmod 644 \"$c/scaling_governor\" \"$c/scaling_min_freq\" \"$c/scaling_max_freq\" 2>/dev/null\n"
+                            + "    echo interactive > \"$c/scaling_governor\" 2>/dev/null\n"
+                            + "    echo 480000 > \"$c/scaling_min_freq\" 2>/dev/null\n"
+                            + "    echo 1296000 > \"$c/scaling_max_freq\" 2>/dev/null\n"
+                            + "  fi\n"
+                            + "done\n"
+                            + "if [ -d /sys/class/devfreq/gpu ]; then\n"
+                            + "  echo 0 > /sys/class/devfreq/gpu/min_freq 2>/dev/null\n"
+                            + "  echo 600000000 > /sys/class/devfreq/gpu/max_freq 2>/dev/null\n"
+                            + "fi\n"
+                            + "echo 60 > /proc/sys/vm/swappiness 2>/dev/null\n"
+                            + "echo 100 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null\n";
+                }
+                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(scriptFile)) {
+                    fos.write(script.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                }
+                Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", "sh " + scriptFile.getAbsolutePath()});
+                p.waitFor();
+            } catch (Exception ignored) {
+            }
+        }, "perf-mode").start();
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        applyPerformanceMode(this);
         density = getResources().getDisplayMetrics().density;
         // config.xml, overlaid by config.json from a pushed theme (see Config and tools/theme.sh).
         Config cfg = Config.load(this);
@@ -532,17 +634,19 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // shelf would render it through an offscreen buffer first, as the glow above notes.
         hero.forceHasOverlappingRendering(false);
         heroMeta = findViewById(R.id.heroMeta);
+        heroOverview = findViewById(R.id.heroOverview);
         heroDots = findViewById(R.id.heroDots);
+        heroRemoveHint = findViewById(R.id.heroRemoveHint);
         heroArt = findViewById(R.id.heroArt);
+        heroArtNext = findViewById(R.id.heroArtNext);
+        heroBadge = findViewById(R.id.heroBadge);
         cinematic = cfg.cinematicHome;
         glowStyle = cfg.glowStyle;
         heroDotsShown = cfg.cinematicDots;
         cinematicWhiteFocus = cfg.cinematicWhiteFocus;
         heroArtAlpha = cfg.cinematicArt / 100f;
         if (cinematic) setUpCinematicShelf(cfg.cinematicScrim);
-        // dock_title false: the name above the dock (and the cinematic lines under it) never shows; the glow
-        // still follows the dock.
-        if (!cfg.dockTitle) hero.setVisibility(View.GONE);
+        initSpotlightCarousel();
         greeting = findViewById(R.id.greeting);
         clockBlock = findViewById(R.id.leftBlock);
         clockRefresh = new ClockRefresh(clockBlock);
@@ -833,11 +937,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             ((TextView) btnSettings).setText(R.string.launcher_settings);
             ((TextView) btnSettings).setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_home_settings_pill, 0, 0, 0);
         }
-        btnSettings.setOnClickListener(v -> {
-            if (launcherSettingsButton) startActivityForResult(
-                    new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST);
-            else open(systemIntent(Settings.ACTION_SETTINGS));
-        });
+        btnSettings.setOnClickListener(v -> showSettingsMenu());
         btnReorder = findViewById(R.id.btnReorder);
         btnReorder.setOnClickListener(v -> toggleReorder());
         btnReorder.setVisibility(cfg.reorderButton ? View.VISIBLE : View.GONE);
@@ -933,10 +1033,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (festive) applyFestiveSkin((TextView) btnInputs, (TextView) btnSettings);
 
         // Hide the glass when focus leaves the tiles.
-        getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener((oldF, newF) -> {
-            boolean onTile = newF != null && newF.getId() == R.id.card;
-            if (!onTile) hideGlass();
-        });
+        // Taken off in onDestroy: recreate() keeps the window, and a listener left on it held every earlier Home.
+        getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener(glassFocusListener);
 
         packageFilter.addAction(Intent.ACTION_PACKAGE_ADDED);
         packageFilter.addAction(Intent.ACTION_PACKAGE_REMOVED);
@@ -958,7 +1056,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         }
 
-        ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+        // From the application, not this activity: a ConnectivityManager keeps the context it was made with,
+        // so every recreate() left the previous Home and its bitmaps behind.
+        ConnectivityManager cm = getApplicationContext().getSystemService(ConnectivityManager.class);
         TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
         if (tim != null) tim.registerCallback(inputCallback, handler);
         if (cm != null) {
@@ -1090,6 +1190,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        spotlightHandler.removeCallbacks(spotlightAutoRotate);
+        spotlightHandler.postDelayed(spotlightAutoRotate, SPOTLIGHT_ROTATE_MS);
+        if (spotlightManager != null && stopped) {
+            spotlightManager.refreshContinueWatching();
+        }
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
             recreate();
@@ -1209,8 +1314,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             heroShown = false;
             hero.setAlpha(0f);
             ambient.setAlpha(0f);
-            heroArt.animate().cancel();
-            heroArt.setAlpha(0f);
+            if (spotlightManager == null) {
+                heroArt.animate().cancel();
+                heroArt.setAlpha(0f);
+            }
         }
         if (rebuild) reloadTiles();
         if (animate && entrance && animations && !reducedMotion) {
@@ -1306,6 +1413,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onPause() {
         super.onPause();
         resumed = false;
+        spotlightHandler.removeCallbacks(spotlightAutoRotate);
+        spotlightHandler.removeCallbacks(spotlightHoldOkRunnable);
+        spotlightOkDown = false;
+        spotlightOkHeld = false;
         // No UP reaches a paused Home, so a vendor-key hold it saw go down would still open its app later.
         // Only Home's own share is dropped: a key service that saw the same DOWN keeps its hold.
         RemoteKeys.release(this);
@@ -1340,6 +1451,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         handler.removeCallbacks(clockCheck);
         stopped = true;
         tileRefresh.onStop();
+        if (spotlightManager != null) {
+            spotlightManager.trimMemory(true);
+        }
     }
 
     /**
@@ -1361,6 +1475,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         heroArtCache.clear();
         heroArtKey = null;
         wallpaperPlayer.releaseForMemoryPressure();
+        if (spotlightManager != null) {
+            spotlightManager.trimMemory(false);
+            currentSpotlightBitmap = null;
+            if (heroArt != null) heroArt.setImageDrawable(null);
+            if (heroArtNext != null) heroArtNext.setImageDrawable(null);
+        }
         tileRefresh.invalidate();
     }
 
@@ -1376,16 +1496,24 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
+    /** Hides the glass when focus leaves the tiles (added in onCreate, removed in onDestroy). */
+    private final ViewTreeObserver.OnGlobalFocusChangeListener glassFocusListener = (oldF, newF) -> {
+        boolean onTile = newF != null && newF.getId() == R.id.card;
+        if (!onTile) hideGlass();
+    };
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        ViewTreeObserver tree = getWindow().getDecorView().getViewTreeObserver();
+        if (tree.isAlive()) tree.removeOnGlobalFocusChangeListener(glassFocusListener);
         RemoteKeys.release(this);
         cancelHoldOk();
         if (gameDay != null) gameDay.shutdown();
         unregisterReceiver(packageReceiver);
         if (openOnStartOnWake) unregisterReceiver(wakeReceiver);
         wallpaperPlayer.close();
-        ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+        ConnectivityManager cm = getApplicationContext().getSystemService(ConnectivityManager.class);   // as registered
         TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
         if (tim != null) tim.unregisterCallback(inputCallback);
         if (cm != null) {
@@ -1656,9 +1784,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (movingKey != null) {
             return pos != RecyclerView.NO_POSITION && movingKey.equals(adapter.keyAt(pos)) ? 1f : 0.45f;
         }
-        if (dockEditSlot >= 0 && pos >= 0 && pos < COLUMNS && pos != dockEditSlot) return 0.45f;
-        if (reordering) return 0.45f;
-        return 1f;
+        return GridNavigation.idleAlpha(pos, COLUMNS, dockEditing, dockEditSlot, reordering);
     }
 
     /** Ends the mode and saves the order if it changed since the mode started. */
@@ -1913,82 +2039,417 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
-    // ---- top shelf -------------------------------------------------------------------------------
+    // ---- top shelf / spotlight -------------------------------------------------------------------
+
+    private float lastDockTopInRoot;
 
     private void showHero(int position, float dockTopInRoot) {
-        String label = adapter.labelAt(position);
+        lastDockTopInRoot = dockTopInRoot;
         int color = adapter.ambientColorAt(position);
-        float y = dockTopInRoot - 14 * density - 26 * density - hero.getHeight();
-        boolean changed = !label.contentEquals(heroName.getText());
-        if (cinematic && heroArtAlpha > 0f) showHeroArt(position);
-
-        if (!animations || reducedMotion) {
-            // Snap the shelf instead of sliding and fading it: each of those frames repaints the
-            // full-screen panel, and this switch exists for the GPUs that cannot afford it.
-            hero.animate().cancel();
-            ambient.animate().cancel();
-            fillHero(position, label);
-            hero.setY(y);
-            hero.setTranslationX(0f);
-            hero.setAlpha(1f);
-            if (ambientGlow) {
-                setAmbient(color);
-                ambient.setAlpha(1f);
-            }
-            heroShown = true;
-            return;
+        adjustHeroY();
+        hero.setTranslationX(0f);
+        hero.setAlpha(1f);
+        if (ambientGlow) {
+            setAmbient(color);
+            ambient.setAlpha(1f);
         }
+        heroShown = true;
+    }
 
-        if (!heroShown) {
-            stopAmbientAnimation();
-            hero.animate().cancel();
-            ambient.animate().cancel();
-            fillHero(position, label);
+    private void adjustHeroY() {
+        if (hero == null || lastDockTopInRoot <= 0) return;
+        hero.post(() -> {
+            float gapDp = 32f;
+            float y = lastDockTopInRoot - gapDp * density - hero.getHeight();
             hero.setY(y);
-            hero.setTranslationX(0f);
-            hero.animate().alpha(1f).setDuration(260).start();
-            if (ambientGlow) {
-                setAmbient(color);
-                ambient.animate().alpha(1f).setDuration(600).start();
-            }
-            heroShown = true;
-        } else if (changed) {
-            if (advancedEffects) hero.animate().cancel();
-            hero.animate().alpha(0f).translationX(-12 * density).setDuration(120).withEndAction(() -> {
-                fillHero(position, label);
-                hero.setY(y);
-                hero.setTranslationX(12 * density);
-                hero.animate().alpha(1f).translationX(0f).setDuration(200).start();
-            }).start();
-            if (ambientGlow && advancedEffects) {
-                transitionAmbient(color);
-            } else if (ambientGlow && color != ambientColor && glowSnap) {
-                ambient.animate().cancel();
-                setAmbient(color);
-                ambient.setAlpha(1f);
-            } else if (ambientGlow && color != ambientColor) {
-                ambient.animate().alpha(0.35f).setDuration(200).withEndAction(() -> {
-                    setAmbient(color);
-                    ambient.animate().alpha(1f).setDuration(500).start();
-                }).start();
-            }
-        } else {
-            hero.setY(y);
-            // onPause cancels the fade-ins, and a second Home during one lands on the same tile, which starts none:
-            // finish them, or the shelf and the glow stay dim until focus moves to another app.
-            if (hero.getAlpha() < 1f) hero.animate().alpha(1f).setDuration(260).start();
-            if (ambientGlow && color == ambientColor && ambient.getAlpha() < 1f) {
-                ambient.animate().alpha(1f).setDuration(600).start();
+        });
+    }
+
+    private void removeCurrentSpotlight() {
+        if (!spotlightFocused || spotlightManager == null) return;
+        spotlightOkHeld = true;
+        SpotlightManager.Item removed = spotlightManager.removeItemAt(spotlightIndex);
+        if (removed != null) {
+            grid.playSoundEffect(SoundEffectConstants.CLICK);
+            Toast.makeText(this, "Removido: " + removed.title, Toast.LENGTH_SHORT).show();
+            List<SpotlightManager.Item> list = spotlightManager.getItems();
+            if (!list.isEmpty()) {
+                spotlightIndex = spotlightIndex % list.size();
+                showSpotlight(spotlightIndex, true);
             }
         }
     }
 
+    private void initSpotlightCarousel() {
+        if (hero == null) return;
+        hero.setVisibility(View.VISIBLE);
+        hero.setAlpha(1f);
+        hero.setFocusable(true);
+        hero.setFocusableInTouchMode(true);
+        hero.setClickable(true);
+
+        if (heroArt != null) {
+            heroArt.forceHasOverlappingRendering(false);
+            heroArt.setScaleX(1.0f);
+            heroArt.setScaleY(1.0f);
+            heroArt.setTranslationY(0f);
+        }
+        if (heroArtNext != null) {
+            heroArtNext.forceHasOverlappingRendering(false);
+            heroArtNext.setScaleX(1.0f);
+            heroArtNext.setScaleY(1.0f);
+            heroArtNext.setTranslationY(0f);
+        }
+
+        View scrim = findViewById(R.id.heroScrim);
+        if (scrim != null) {
+            scrim.setBackground(scrimDrawable());
+            scrim.setVisibility(View.VISIBLE);
+        }
+
+        hero.setOnFocusChangeListener((v, hasFocus) -> {
+            spotlightFocused = hasFocus;
+            spotlightHandler.removeCallbacks(spotlightHoldOkRunnable);
+            spotlightOkDown = false;
+            spotlightOkHeld = false;
+            hero.setBackground(null);
+            if (hasFocus) {
+                hideGlass();
+                spotlightHandler.removeCallbacks(spotlightAutoRotate);
+            } else {
+                spotlightHandler.removeCallbacks(spotlightAutoRotate);
+                spotlightHandler.postDelayed(spotlightAutoRotate, SPOTLIGHT_ROTATE_MS);
+            }
+            if (heroRemoveHint != null) {
+                heroRemoveHint.setVisibility(hasFocus ? View.VISIBLE : View.GONE);
+            }
+            updateSpotlightDots();
+        });
+
+        hero.setOnKeyListener((v, keyCode, event) -> {
+            List<SpotlightManager.Item> list = spotlightManager != null ? spotlightManager.getItems() : null;
+            int count = list != null ? list.size() : 0;
+            if (count == 0) return false;
+
+            if (isOkKey(keyCode)) {
+                if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                    if (event.getRepeatCount() == 0) {
+                        spotlightOkDown = true;
+                        spotlightOkHeld = false;
+                        spotlightHandler.removeCallbacks(spotlightHoldOkRunnable);
+                        spotlightHandler.postDelayed(spotlightHoldOkRunnable, 600);
+                    } else if (!spotlightOkHeld && (event.getRepeatCount() >= 2
+                            || event.getEventTime() - event.getDownTime() >= 550)) {
+                        spotlightHandler.removeCallbacks(spotlightHoldOkRunnable);
+                        removeCurrentSpotlight();
+                    }
+                    return true;
+                } else if (event.getAction() == KeyEvent.ACTION_UP) {
+                    spotlightHandler.removeCallbacks(spotlightHoldOkRunnable);
+                    boolean shouldLaunch = spotlightOkDown && !spotlightOkHeld && !event.isCanceled();
+                    spotlightOkDown = false;
+                    spotlightOkHeld = false;
+                    if (shouldLaunch && spotlightIndex >= 0 && spotlightIndex < count) {
+                        spotlightManager.launchItem(list.get(spotlightIndex));
+                    }
+                    return true;
+                }
+                return false;
+            }
+
+            if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
+
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                spotlightIndex = (spotlightIndex - 1 + count) % count;
+                showSpotlight(spotlightIndex, true);
+                grid.playSoundEffect(SoundEffectConstants.NAVIGATION_LEFT);
+                return true;
+            } else if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                spotlightIndex = (spotlightIndex + 1) % count;
+                showSpotlight(spotlightIndex, true);
+                grid.playSoundEffect(SoundEffectConstants.NAVIGATION_RIGHT);
+                return true;
+            } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                int target = Math.max(0, Math.min(lastFocused, COLUMNS - 1));
+                focusTile(target);
+                grid.playSoundEffect(SoundEffectConstants.NAVIGATION_DOWN);
+                return true;
+            } else if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                TextView settings = findViewById(R.id.btnSettings);
+                if (settings != null) settings.requestFocus();
+                grid.playSoundEffect(SoundEffectConstants.NAVIGATION_UP);
+                return true;
+            }
+            return false;
+        });
+
+        spotlightManager = new SpotlightManager(this, new SpotlightManager.Callback() {
+            @Override
+            public void onSpotlightsLoaded(List<SpotlightManager.Item> items) {
+                if (!items.isEmpty()) {
+                    spotlightIndex = spotlightIndex % items.size();
+                    showSpotlight(spotlightIndex, false);
+                }
+            }
+
+            @Override
+            public void onBackdropLoaded(int index, Bitmap bitmap) {
+                if (index == spotlightIndex && bitmap != null) {
+                    showSpotlight(spotlightIndex, true);
+                }
+            }
+        });
+        spotlightManager.startLoading();
+    }
+
+    private GradientDrawable heroBadgeDrawable;
+    private boolean heroArtNextIsFront = false;
+    private Bitmap currentSpotlightBitmap = null;
+    private String currentSpotlightTitle = null;
+    private int crossfadeToken = 0;
+
+    private void updateSpotlightDots() {
+        if (heroDots == null) return;
+        List<SpotlightManager.Item> list = spotlightManager != null ? spotlightManager.getItems() : null;
+        int count = list != null ? Math.min(SpotlightManager.MAX_ITEMS, list.size()) : 0;
+        if (count == 0) return;
+
+        heroDots.setVisibility(View.VISIBLE);
+        if (heroRemoveHint != null) {
+            heroRemoveHint.setVisibility(spotlightFocused ? View.VISIBLE : View.GONE);
+        }
+        if (heroDots.getChildCount() != count) {
+            heroDots.removeAllViews();
+            for (int i = 0; i < count; i++) {
+                View dot = new View(this);
+                android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+                bg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+                dot.setBackground(bg);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams((int) (6 * density), (int) (6 * density));
+                lp.gravity = Gravity.CENTER_VERTICAL;
+                if (i > 0) lp.leftMargin = (int) (7 * density);
+                heroDots.addView(dot, lp);
+            }
+        }
+        for (int i = 0; i < count; i++) {
+            View dot = heroDots.getChildAt(i);
+            boolean on = (i == spotlightIndex);
+            android.graphics.drawable.GradientDrawable bg = (android.graphics.drawable.GradientDrawable) dot.getBackground();
+            if (bg == null) {
+                bg = new android.graphics.drawable.GradientDrawable();
+                bg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+                dot.setBackground(bg);
+            }
+            int wDp;
+            int hDp;
+            if (on) {
+                bg.setColor(0xFFFFFFFF);
+                wDp = spotlightFocused ? 22 : 7;
+                hDp = 7;
+            } else {
+                bg.setColor(0x55FFFFFF);
+                wDp = 5;
+                hDp = 5;
+            }
+            bg.setStroke(0, 0);
+            bg.setCornerRadius((hDp / 2f) * density);
+
+            int wPx = (int) (wDp * density);
+            int hPx = (int) (hDp * density);
+            LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) dot.getLayoutParams();
+            if (lp.width != wPx || lp.height != hPx) {
+                lp.width = wPx;
+                lp.height = hPx;
+                lp.gravity = Gravity.CENTER_VERTICAL;
+                dot.setLayoutParams(lp);
+            }
+        }
+    }
+
+    private void applySpotlightTexts(SpotlightManager.Item item) {
+        if (heroBadge != null) {
+            if (item.service != null && !item.service.isEmpty()) {
+                heroBadge.setText(item.service);
+                if (heroBadgeDrawable == null) {
+                    heroBadgeDrawable = new GradientDrawable();
+                    heroBadgeDrawable.setCornerRadius(6 * density);
+                    heroBadge.setBackground(heroBadgeDrawable);
+                }
+                heroBadgeDrawable.setColor(item.badgeColor);
+                heroBadge.setVisibility(View.VISIBLE);
+            } else {
+                heroBadge.setVisibility(View.GONE);
+            }
+        }
+
+        if (heroName != null) {
+            heroName.setText(item.title);
+        }
+
+        if (heroMeta != null) {
+            if (item.meta != null && !item.meta.isEmpty()) {
+                heroMeta.setText(item.meta);
+                heroMeta.setVisibility(View.VISIBLE);
+            } else {
+                heroMeta.setText("");
+                heroMeta.setVisibility(View.INVISIBLE);
+            }
+        }
+
+        if (heroOverview != null) {
+            if (item.overview != null && !item.overview.trim().isEmpty()) {
+                heroOverview.setText(item.overview.trim());
+                heroOverview.setVisibility(View.VISIBLE);
+            } else {
+                heroOverview.setText("");
+                heroOverview.setVisibility(View.INVISIBLE);
+            }
+        }
+    }
+
+    private void setSpotlightTextAlpha(float alpha) {
+        if (heroBadge != null) heroBadge.setAlpha(alpha);
+        if (heroName != null) heroName.setAlpha(alpha);
+        if (heroMeta != null) heroMeta.setAlpha(alpha);
+        if (heroOverview != null) heroOverview.setAlpha(alpha);
+    }
+
+    private void showSpotlight(int index, boolean animate) {
+        List<SpotlightManager.Item> list = spotlightManager != null ? spotlightManager.getItems() : null;
+        if (list == null || list.isEmpty() || index < 0 || index >= list.size()) return;
+        spotlightManager.setActiveIndex(index);
+        final SpotlightManager.Item item = list.get(index);
+
+        final boolean titleChanged = currentSpotlightTitle == null || !currentSpotlightTitle.equals(item.title);
+        currentSpotlightTitle = item.title;
+
+        updateSpotlightDots();
+
+        if (!animate || !animations || reducedMotion) {
+            ++crossfadeToken;
+            applySpotlightTexts(item);
+            setSpotlightTextAlpha(1f);
+            if (heroArt != null && heroArtNext != null && item.bitmap != null) {
+                currentSpotlightBitmap = item.bitmap;
+                heroArtNextIsFront = false;
+                heroArt.setVisibility(View.VISIBLE);
+                heroArtNext.setVisibility(View.VISIBLE);
+                heroArt.setImageBitmap(item.bitmap);
+                heroArt.setTranslationZ(1f);
+                heroArt.setAlpha(1f);
+                heroArtNext.setTranslationZ(0f);
+                heroArtNext.setAlpha(0f);
+            }
+            adjustHeroY();
+            return;
+        }
+
+        final int token = ++crossfadeToken;
+        final boolean hasNewBitmap = (heroArt != null && heroArtNext != null
+                && item.bitmap != null && item.bitmap != currentSpotlightBitmap);
+        final boolean firstImage = (currentSpotlightBitmap == null);
+
+        final ImageView incoming;
+        final ImageView outgoing;
+        if (hasNewBitmap) {
+            currentSpotlightBitmap = item.bitmap;
+            heroArt.setVisibility(View.VISIBLE);
+            heroArtNext.setVisibility(View.VISIBLE);
+            if (firstImage) {
+                heroArtNextIsFront = false;
+                heroArt.setImageBitmap(item.bitmap);
+                heroArt.setTranslationZ(1f);
+                heroArt.setAlpha(1f);
+                heroArtNext.setTranslationZ(0f);
+                heroArtNext.setAlpha(0f);
+                applySpotlightTexts(item);
+                setSpotlightTextAlpha(1f);
+                adjustHeroY();
+                return;
+            }
+            incoming = heroArtNextIsFront ? heroArt : heroArtNext;
+            outgoing = heroArtNextIsFront ? heroArtNext : heroArt;
+            heroArtNextIsFront = !heroArtNextIsFront;
+
+            incoming.setAlpha(0f);
+            incoming.setImageBitmap(item.bitmap);
+            incoming.setTranslationZ(1f);
+            outgoing.setTranslationZ(0f);
+            outgoing.setAlpha(1f);
+        } else {
+            incoming = null;
+            outgoing = null;
+            if (!titleChanged) {
+                applySpotlightTexts(item);
+                setSpotlightTextAlpha(1f);
+                adjustHeroY();
+                return;
+            }
+        }
+
+        final boolean animateText = titleChanged && heroName != null && heroName.getText().length() > 0;
+        if (!animateText) {
+            applySpotlightTexts(item);
+            setSpotlightTextAlpha(1f);
+            adjustHeroY();
+        }
+
+        // Driven directly by Choreographer frame timestamps so the crossfade always runs at 60fps
+        // over 1000ms even when Android's global animator_duration_scale is set to 0 on the TVBox.
+        android.view.Choreographer.getInstance().postFrameCallback(new android.view.Choreographer.FrameCallback() {
+            private long startNs = -1L;
+            private boolean textSwapped = !animateText;
+
+            @Override
+            public void doFrame(long frameTimeNanos) {
+                if (token != crossfadeToken) return;
+                if (startNs < 0L) {
+                    // First frame after Bitmap bind: start timer now so GPU upload doesn't skip frames
+                    startNs = frameTimeNanos;
+                    android.view.Choreographer.getInstance().postFrameCallback(this);
+                    return;
+                }
+                float elapsedMs = (frameTimeNanos - startNs) / 1_000_000f;
+
+                if (animateText) {
+                    if (elapsedMs < 200f) {
+                        setSpotlightTextAlpha(Math.max(0f, 1f - (elapsedMs / 200f)));
+                    } else {
+                        if (!textSwapped) {
+                            textSwapped = true;
+                            applySpotlightTexts(item);
+                            adjustHeroY();
+                        }
+                        float inT = Math.min(1f, (elapsedMs - 200f) / 450f);
+                        setSpotlightTextAlpha(inT);
+                    }
+                }
+
+                float imgT = Math.min(1f, elapsedMs / 1000f);
+                if (incoming != null) {
+                    float eased = imgT * imgT * (3f - 2f * imgT);
+                    incoming.setAlpha(eased);
+                }
+
+                if (imgT < 1f || (animateText && elapsedMs < 650f)) {
+                    android.view.Choreographer.getInstance().postFrameCallback(this);
+                } else {
+                    if (incoming != null && outgoing != null) {
+                        incoming.setAlpha(1f);
+                        outgoing.setAlpha(0f);
+                    }
+                    if (!textSwapped) {
+                        applySpotlightTexts(item);
+                        adjustHeroY();
+                    }
+                    setSpotlightTextAlpha(1f);
+                }
+            }
+        });
+    }
+
     /** The shelf's text for this dock app: its name and, on the cinematic shelf, "Last opened" and the dots. */
     private void fillHero(int position, String label) {
-        heroName.setText(label);
-        if (!cinematic) return;
-        updateHeroMeta(position);
-        updateHeroDots(position);
     }
 
     // ---- cinematic shelf -------------------------------------------------------------------------
@@ -2024,13 +2485,28 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         Canvas canvas = new Canvas(bmp);
         boolean rtl = getResources().getBoolean(R.bool.rtl_menu_bar);
         Paint paint = new Paint();
+
+        // 1. Dark Top Scrim (vinheta superior com transição suave e gradual para não cobrir a arte)
+        paint.setShader(new LinearGradient(0, 0, 0, h * 0.48f,
+                new int[]{0xD0060406, 0x90060406, 0x50060406, 0x20060406, 0x06060406, 0x00060406},
+                new float[]{0f, 0.20f, 0.45f, 0.70f, 0.88f, 1f},
+                Shader.TileMode.CLAMP));
+        canvas.drawRect(0, 0, w, h * 0.48f, paint);
+
+        // 2. Lateral suave para legibilidade dos títulos
         paint.setShader(new LinearGradient(rtl ? w : 0, 0, rtl ? 0 : w, 0,
-                new int[]{0xD1060406, 0x59060406, 0x00060406}, new float[]{0f, 0.42f, 0.7f}, Shader.TileMode.CLAMP));
-        canvas.drawRect(0, 0, w, h, paint);
-        paint.setShader(new LinearGradient(0, 0, 0, h,
-                new int[]{0x00060406, 0x00060406, 0xDB060406, 0xFF060406}, new float[]{0f, 0.28f, 0.58f, 0.76f},
+                new int[]{0x88060406, 0x38060406, 0x00060406},
+                new float[]{0f, 0.35f, 0.70f},
                 Shader.TileMode.CLAMP));
         canvas.drawRect(0, 0, w, h, paint);
+
+        // 3. Proteção inferior atrás do dock
+        paint.setShader(new LinearGradient(0, 0, 0, h,
+                new int[]{0x00060406, 0x00060406, 0x99060406, 0xE0060406},
+                new float[]{0f, 0.50f, 0.75f, 1f},
+                Shader.TileMode.CLAMP));
+        canvas.drawRect(0, 0, w, h, paint);
+
         BitmapDrawable scrim = new BitmapDrawable(getResources(), bmp);
         scrim.setGravity(Gravity.FILL);
         return scrim;
@@ -2038,6 +2514,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     /** Swaps the backdrop to this app's artwork: fade out, swap, fade in, the way the shelf's name changes. */
     private void showHeroArt(int position) {
+        if (spotlightManager != null) return;
         String key = adapter.keyAt(position);
         if (key == null) return;
         heroArt.animate().cancel();
@@ -2131,36 +2608,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(bmp);
             Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            if (cinematic) {
-                // Higher and stronger, from the corner away from the shelf's text: the app's colour floods
-                // the top of the screen over its artwork, and the scrim keeps the text side dark.
-                boolean rtl = getResources().getBoolean(R.bool.rtl_menu_bar);
-                paint.setShader(new RadialGradient(
-                        w * (rtl ? 0.20f : 0.80f), h * 0.06f, w * 0.78f,
-                        new int[]{0xA6FFFFFF, 0x47FFFFFF, 0x00FFFFFF},
-                        new float[]{0f, 0.5f, 1f},
-                        Shader.TileMode.CLAMP));
-            } else if (Config.GLOW_HORIZON.equals(glowStyle)) {
-                // The colour washes down from the top edge and fades out three quarters of the way down,
-                // with a brighter band along the top like light over a horizon.
-                paint.setShader(new LinearGradient(0, 0, 0, h * 0.75f,
-                        new int[]{0x66FFFFFF, 0x24FFFFFF, 0x00FFFFFF},
-                        new float[]{0f, 0.4f, 1f},
-                        Shader.TileMode.CLAMP));
-                canvas.drawRect(0, 0, w, h, paint);
-                paint.setShader(new RadialGradient(
-                        w * 0.5f, -h * 0.25f, w * 0.55f,
-                        new int[]{0x40FFFFFF, 0x00FFFFFF},
-                        null,
-                        Shader.TileMode.CLAMP));
-            } else {
-                paint.setShader(new RadialGradient(
-                        w * 0.32f, h * 0.42f, w * 0.62f,
-                        new int[]{0x5CFFFFFF, 0x26FFFFFF, 0x00FFFFFF},
-                        new float[]{0f, 0.45f, 1f},
-                        Shader.TileMode.CLAMP));
-            }
-            canvas.drawRect(0, 0, w, h, paint);
+
+            // Brilho ambiente no topo acompanhando a cor do app selecionado (suave)
+            paint.setShader(new LinearGradient(0, 0, 0, h * 0.45f,
+                    new int[]{0x80FFFFFF, 0x44FFFFFF, 0x14FFFFFF, 0x00FFFFFF},
+                    new float[]{0f, 0.30f, 0.65f, 1f},
+                    Shader.TileMode.CLAMP));
+            canvas.drawRect(0, 0, w, h * 0.45f, paint);
+
             glow = new BitmapDrawable(getResources(), bmp);
             glow.setGravity(Gravity.FILL);
             ambient.setBackground(glow);
@@ -2201,8 +2656,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         hero.animate().cancel();
         ambient.animate().cancel();
         hero.setAlpha(0f);
-        heroArt.animate().cancel();
-        heroArt.setAlpha(0f);
+        if (spotlightManager == null) {
+            heroArt.animate().cancel();
+            heroArt.setAlpha(0f);
+        }
         heroShown = false;
         if (!ambientGlow) return;
         if (!animations || reducedMotion) {
@@ -2231,16 +2688,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         stopAmbientAnimation();
         hero.animate().cancel();
         ambient.animate().cancel();
-        heroArt.animate().cancel();
+        if (spotlightManager == null) heroArt.animate().cancel();
         heroShown = false;
         if (animations && !reducedMotion) {
             hero.animate().alpha(0f).setDuration(160).start();
             if (ambientGlow) ambient.animate().alpha(0f).setDuration(300).start();
-            heroArt.animate().alpha(0f).setDuration(300).start();
+            if (spotlightManager == null) heroArt.animate().alpha(0f).setDuration(300).start();
         } else {
             hero.setAlpha(0f);
             ambient.setAlpha(0f);
-            heroArt.setAlpha(0f);
+            if (spotlightManager == null) heroArt.setAlpha(0f);
         }
     }
 
@@ -2437,9 +2894,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         int count = adapter.appCount();
         int target;
         if (singleRow) {
-            // One row: Up leaves for the top bar, Down has nowhere to go, and Left/Right walk the whole row,
-            // stopping at its two ends (the default focus search scrolls the row to the next tile).
-            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) return false;
+            // One row: Up leaves for the top bar or spotlight, Down has nowhere to go, and Left/Right walk the whole row.
+            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                if (hero != null && hero.getVisibility() == View.VISIBLE) {
+                    hero.requestFocus();
+                    grid.playSoundEffect(SoundEffectConstants.NAVIGATION_UP);
+                    return true;
+                }
+                return false;
+            }
             if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) return true;
             boolean forward = rtlAppGrid ? keyCode == KeyEvent.KEYCODE_DPAD_LEFT : keyCode == KeyEvent.KEYCODE_DPAD_RIGHT;
             int last = adapter.focusablePosition(count - 1);
@@ -2463,7 +2926,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     rtlAppGrid, keyCode == KeyEvent.KEYCODE_DPAD_LEFT);
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-            if (position < COLUMNS) return false;          // dock row: let focus move to the top bar
+            if (position < COLUMNS) {
+                if (hero != null && hero.getVisibility() == View.VISIBLE) {
+                    hero.requestFocus();
+                    grid.playSoundEffect(SoundEffectConstants.NAVIGATION_UP);
+                    return true;
+                }
+                return false;          // dock row: let focus move to the top bar
+            }
             target = position - COLUMNS;
         } else {
             int lastRowStart = ((count - 1) / COLUMNS) * COLUMNS;
@@ -2938,7 +3408,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         int flame = 0;
         boolean steady = false;
         try {
-            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            ConnectivityManager cm = getApplicationContext().getSystemService(ConnectivityManager.class);
             boolean wifi = false, ethernet = false;
             // All networks, not just the active one: with a VPN up the active network is the VPN itself.
             for (Network net : cm != null ? cm.getAllNetworks() : new Network[0]) {
@@ -3712,7 +4182,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
         LinearLayout rows = panel.findViewById(R.id.rows);
         PopupWindow popup = glassPopup(panel, (int) (200 * density));
-        if (!launcherSettingsButton) addSettingsMenuRow(rows, popup, R.string.launcher_settings, () -> startActivityForResult(
+        addSettingsMenuRow(rows, popup, R.string.general_settings, () -> open(systemIntent(Settings.ACTION_SETTINGS)));
+        addSettingsMenuRow(rows, popup, R.string.launcher_settings, () -> startActivityForResult(
                 new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST));
         // Firmware that ships its own settings app next to the AOSP one (Xiaomi China is one): the
         // vendor app holds pages the AOSP settings has no row for, such as Account & Security with
@@ -3830,6 +4301,35 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         onTileLongPress(position, card);
     }
 
+    private void showRenameDialog(String pkg, String currentLabel) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle(R.string.tile_rename);
+        final EditText input = new EditText(this);
+        input.setText(currentLabel);
+        input.setSingleLine(true);
+        input.setTextColor(Color.WHITE);
+        int pad = (int) (18 * density);
+        input.setPadding(pad, pad, pad, pad);
+        builder.setView(input);
+        builder.setPositiveButton(R.string.save, (d, which) -> {
+            String newName = input.getText().toString().trim();
+            if (!newName.isEmpty()) {
+                getSharedPreferences("user_labels", MODE_PRIVATE).edit().putString(pkg, newName).apply();
+                reloadApps(false);
+            }
+        });
+        builder.setNeutralButton(R.string.reset, (d, which) -> {
+            getSharedPreferences("user_labels", MODE_PRIVATE).edit().remove(pkg).apply();
+            reloadApps(false);
+        });
+        builder.setNegativeButton(android.R.string.cancel, null);
+        AlertDialog dialog = builder.create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+        }
+        dialog.show();
+    }
+
     @Override
     public void onTileLongPress(int position, View card) {
         if (reordering || openPopup != null) return;
@@ -3853,6 +4353,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             pickUp(at);
             Toast.makeText(this, R.string.reorder_hint, Toast.LENGTH_LONG).show();
         });
+        addSettingsMenuRow(rows, popup, R.string.tile_rename, () -> showRenameDialog(pkg, adapter.labelAt(position)));
         if (appLibraryEnabled) addSettingsMenuRow(rows, popup, R.string.library_remove_shortcut, () -> {
             if (LibraryApps.save(this, pkg, false)) reloadApps(false);
             else Toast.makeText(this, R.string.library_save_failed, Toast.LENGTH_LONG).show();

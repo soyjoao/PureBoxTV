@@ -108,6 +108,27 @@
         </LinearLayout>
 
         <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="@string/idle_clock_label"
+            android:textColor="#FFFFFFFF"
+            android:textSize="20sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:orientation="horizontal">
+
+            <TextView android:id="@+id/idleClock5" style="@style/SettingsColumnChoice" android:paddingStart="8dp" android:paddingEnd="8dp" android:maxLines="1" android:text="@string/idle_clock_5" />
+            <TextView android:id="@+id/idleClock15" style="@style/SettingsColumnChoice" android:paddingStart="8dp" android:paddingEnd="8dp" android:maxLines="1" android:text="@string/idle_clock_15" />
+            <TextView android:id="@+id/idleClock30" style="@style/SettingsColumnChoice" android:paddingStart="8dp" android:paddingEnd="8dp" android:maxLines="1" android:text="@string/idle_clock_30" />
+            <TextView android:id="@+id/idleClock60" style="@style/SettingsColumnChoice" android:paddingStart="8dp" android:paddingEnd="8dp" android:maxLines="1" android:text="@string/idle_clock_60" />
+            <TextView android:id="@+id/idleClockOff" style="@style/SettingsColumnChoice" android:paddingStart="8dp" android:paddingEnd="8dp" android:maxLines="1" android:text="@string/idle_clock_off" />
+        </LinearLayout>
+
+        <TextView
             android:id="@+id/wallpaperChoice"
             style="@style/SettingsRow"
             android:layout_marginTop="28dp" />
@@ -129,6 +150,76 @@
             android:text="@string/advanced_effects_warning"
             android:textColor="#FFACB8C1"
             android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/tmdbApiKeyChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="28dp" />
+
+        <TextView
+            android:id="@+id/fanartApiKeyChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/tvdbApiKeyChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/performanceModeChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="18dp" />
+
+        <TextView
+            android:id="@+id/dockBandChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/dockGlassChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/alwaysShowNamesChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/showGreetingChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/greetingNameChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/showStatsChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/ambientGlowChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/appGlowChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/libraryButtonChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/showLibraryPillChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
 
         <TextView
             android:id="@+id/openOnStartChoice"

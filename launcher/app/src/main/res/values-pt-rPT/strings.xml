@@ -14,4 +14,8 @@
     <string name="clock_format_system">System</string>
     <string name="clock_format_12">12-hour</string>
     <string name="clock_format_24">24-hour</string>
+    <string name="general_settings">Definições gerais</string>
+    <string name="tile_rename">Mudar nome do app</string>
+    <string name="save">Guardar</string>
+    <string name="reset">Repor</string>
 </resources>
