@@ -27,8 +27,8 @@ android {
         applicationId providers.gradleProperty('launcherApplicationId').getOrElse('com.gathin.tvhome')
         minSdk 26
         targetSdk 34
-        versionCode 13
-        versionName '3.4'
+        versionCode 14
+        versionName '3.5'
         buildConfigField 'String', 'DEFAULT_TMDB_API_KEY', propStr('tmdb.api.key')
         buildConfigField 'String', 'DEFAULT_FANART_API_KEY', propStr('fanart.api.key')
         buildConfigField 'String', 'DEFAULT_TVDB_API_KEY', propStr('tvdb.api.key')

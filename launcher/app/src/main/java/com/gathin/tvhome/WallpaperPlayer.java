@@ -213,7 +213,9 @@ final class WallpaperPlayer {
         text.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         text.setTextColor(0xD9FFFFFF);
         text.setShadowLayer(6 * dp, 0, dp, 0xCC000000);
-        // Room for the shadow (6 dp of blur, 1 dp down) inside the view so edges don't clip it.
+        // Room for the shadow (6 dp of blur, 1 dp down) inside the view: Home's root, and the layer a fade draws
+        // through, cut everything at the view's edges, which left a hard-edged dark box around the text. The
+        // margins below take the padding back, so the text stays where it was.
         int pad = Math.round(8 * dp);
         text.setPadding(pad, pad, pad, pad);
         text.setSingleLine(true);
