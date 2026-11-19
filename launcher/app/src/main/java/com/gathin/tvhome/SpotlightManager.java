@@ -643,9 +643,11 @@ public final class SpotlightManager {
                 String cachedBp = tmdbEnrichCache.get(cacheKey)[1];
                 if (cachedBp != null && !cachedBp.isEmpty()) return cachedBp;
             }
+            String key = apiKey();
+            if (key == null || key.isEmpty()) return null;
             String encoded = URLEncoder.encode(clean, "UTF-8");
             String urlStr = "https://api.themoviedb.org/3/search/multi?api_key="
-                    + apiKey() + "&language=pt-BR&query=" + encoded;
+                    + key + "&language=pt-BR&query=" + encoded;
             String json = httpGet(urlStr);
             if (json != null) {
                 JSONObject root = new JSONObject(json);
@@ -813,6 +815,9 @@ public final class SpotlightManager {
             }
             if (item.tmdbId <= 0) return;
 
+            String tKey = apiKey();
+            if (tKey == null || tKey.isEmpty()) return;
+
             String type = "tv".equals(item.mediaType) ? "tv" : "movie";
             List<String> tmdbList = new ArrayList<>();
             List<String> fanartList = new ArrayList<>();
@@ -821,7 +826,7 @@ public final class SpotlightManager {
             // 1. TMDB /images (1080p+ clean textless backdrops only: include_image_language=null)
             try {
                 String imgUrl = "https://api.themoviedb.org/3/" + type + "/" + item.tmdbId
-                        + "/images?api_key=" + apiKey() + "&include_image_language=null";
+                        + "/images?api_key=" + tKey + "&include_image_language=null";
                 String json = httpGet(imgUrl);
                 if (json != null) {
                     JSONObject root = new JSONObject(json);
@@ -918,11 +923,13 @@ public final class SpotlightManager {
                 if (item.tmdbId > 0) return;
             }
         }
+        String key = apiKey();
+        if (key == null || key.isEmpty()) return;
         try {
             String clean = item.title.replaceAll("\\s*[-–:]\\s*S\\d+.*$", "").trim();
             String encoded = URLEncoder.encode(clean, "UTF-8");
             String json = httpGet("https://api.themoviedb.org/3/search/multi?api_key="
-                    + apiKey() + "&language=pt-BR&query=" + encoded);
+                    + key + "&language=pt-BR&query=" + encoded);
             if (json == null) return;
             JSONArray results = new JSONObject(json).optJSONArray("results");
             if (results == null) return;
@@ -1063,18 +1070,23 @@ public final class SpotlightManager {
 
         // C. Fetch Provider-Verified Movies & Series from TMDB in pt-BR (watch_region=BR)
         String currentApiKey = apiKey();
-        long now = android.os.SystemClock.elapsedRealtime();
-        boolean useTrendingCache = !cachedTrendingPool.isEmpty()
-                && currentApiKey.equals(lastUsedApiKey)
-                && (now - lastTrendingFetchMs) < TRENDING_TTL_MS;
+        if (currentApiKey == null || currentApiKey.isEmpty()) {
+            cachedTrendingPool.clear();
+            lastUsedApiKey = "";
+        } else {
+            long now = android.os.SystemClock.elapsedRealtime();
+            boolean useTrendingCache = !cachedTrendingPool.isEmpty()
+                    && currentApiKey.equals(lastUsedApiKey)
+                    && (now - lastTrendingFetchMs) < TRENDING_TTL_MS;
 
-        if (!useTrendingCache) {
-            List<Item> fetchedTrending = fetchVerifiedTmdbCatalog(currentApiKey, installedServices);
-            if (!fetchedTrending.isEmpty()) {
-                cachedTrendingPool.clear();
-                cachedTrendingPool.addAll(fetchedTrending);
-                lastTrendingFetchMs = now;
-                lastUsedApiKey = currentApiKey;
+            if (!useTrendingCache) {
+                List<Item> fetchedTrending = fetchVerifiedTmdbCatalog(currentApiKey, installedServices);
+                if (!fetchedTrending.isEmpty()) {
+                    cachedTrendingPool.clear();
+                    cachedTrendingPool.addAll(fetchedTrending);
+                    lastTrendingFetchMs = now;
+                    lastUsedApiKey = currentApiKey;
+                }
             }
         }
 
@@ -1451,9 +1463,11 @@ public final class SpotlightManager {
                 return;
             }
 
+            String key = apiKey();
+            if (key == null || key.isEmpty()) return;
             String encoded = URLEncoder.encode(cleanTitle, "UTF-8");
             String urlStr = "https://api.themoviedb.org/3/search/multi?api_key="
-                    + apiKey() + "&language=pt-BR&query=" + encoded;
+                    + key + "&language=pt-BR&query=" + encoded;
             String json = httpGet(urlStr);
             if (json == null) return;
 

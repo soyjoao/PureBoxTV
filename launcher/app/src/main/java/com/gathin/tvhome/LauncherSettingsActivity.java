@@ -565,9 +565,12 @@ public final class LauncherSettingsActivity extends Activity {
                 "none".equals(wallpaperCurrent) ? getString(R.string.wallpaper_none)
                         : wallpaperCurrent != null ? wallpaperCurrent
                         : getString(R.string.wallpaper_theme_default)));
-        tmdbApiKeyChoice.setText(getString(R.string.tmdb_api_key_state, SpotlightManager.getTmdbApiKey(this)));
-        fanartApiKeyChoice.setText(getString(R.string.fanart_api_key_state, SpotlightManager.getFanartApiKey(this)));
-        tvdbApiKeyChoice.setText(getString(R.string.tvdb_api_key_state, SpotlightManager.getTvdbApiKey(this)));
+        tmdbApiKeyChoice.setText(getString(R.string.tmdb_api_key_state,
+                formatApiKeyState(SpotlightManager.getTmdbApiKey(this))));
+        fanartApiKeyChoice.setText(getString(R.string.fanart_api_key_state,
+                formatApiKeyState(SpotlightManager.getFanartApiKey(this))));
+        tvdbApiKeyChoice.setText(getString(R.string.tvdb_api_key_state,
+                formatApiKeyState(SpotlightManager.getTvdbApiKey(this))));
         performanceModeChoice.setText(getString(R.string.performance_mode_state,
                 getString(performanceMode ? R.string.on : R.string.off)));
         dockBandChoice.setText(getString(R.string.dock_band_state,
@@ -607,6 +610,12 @@ public final class LauncherSettingsActivity extends Activity {
                 || choices.contains(Config.GREETING_NAME_KEY) || choices.contains(Config.SHOW_STATS_KEY)
                 || choices.contains(Config.AMBIENT_GLOW_KEY) || choices.contains(Config.APP_GLOW_KEY)
                 || choices.contains(Config.LIBRARY_BUTTON_KEY) || choices.contains(Config.SHOW_LIBRARY_PILL_KEY);
+    }
+
+    private String formatApiKeyState(String key) {
+        if (key == null || key.isEmpty()) return getString(R.string.api_key_not_set);
+        if (key.length() <= 4) return "••••";
+        return "••••••••" + key.substring(key.length() - 4);
     }
 
     private void open(Intent intent) {
