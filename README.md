@@ -24,8 +24,9 @@ Projetado para oferecer visual moderno de cinema com **carrossel Spotlight em Fu
   - Abertura mais rápida da Home no boot adiando o upload de GPU do wallpaper para após o primeiro frame (PR #4175) e fallback interno de `wallpaper.jpg` quando o `/sdcard` ainda não montou no boot (Issue #4104).
   - Inclui a correção de vazamento de memória em `recreate()` da v3.5 (`ConnectivityManager` via `ApplicationContext` + remoção do `OnGlobalFocusChangeListener`).
 
-- **Tela de Configurações redesenhada (Android Design for TV — 2 painéis)**
-  - Menu lateral em vidro escuro com **5 categorias** (*Aparência e Grade*, *Fundo e Spotlight*, *Relógio e Clima*, *Sistema e Desempenho*, *Geral e TV*) e zona segura de overscan.
+- **Tela de Configurações redesenhada (Android Design for TV — 2 painéis) & Menu Unificado**
+  - Painel lateral em preto sólido (mesmo estilo do menu de contexto da Home) com ícones minimalistas preenchidos + painel direito em vidro seguindo dinamicamente o estilo e a opacidade do Dock (`DockDecoration`) com pílulas idênticas aos botões da barra superior.
+  - **Menu de Configurações / botão Menu unificados** em uma única lista com ícones (*Configurações do sistema*, *Configurações do launcher*, *Tela*, *Rede*, *Cartões de módulo*, *Reordenar dock e apps* e *Aplicativos instalados*).
   - **Papel de parede + Carrossel Spotlight integrados:** permite ativar/desativar o Spotlight; escolher um papel de parede manualmente desativa o Spotlight automaticamente e aplica o fundo escolhido.
   - **Protetor de tela (Relógio):** seletor direto na TV (`5 minutos`, `15 minutos`, `30 minutos`, `60 minutos` ou `Desligado`, padrão `15 minutos`).
   - **Clima no relógio (Open-Meteo):** temperatura e condição atual ao vivo abaixo do relógio (100% gratuito, sem chave de API), com detecção automática por IP ou **busca interativa de cidades** com coordenadas exatas.

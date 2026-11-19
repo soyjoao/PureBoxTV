@@ -40,14 +40,21 @@ public final class QuickSettingsActivity extends Activity {
         }
         findViewById(R.id.scrim).setOnClickListener(v -> finish());
         LinearLayout rows = findViewById(R.id.rows);
-        addRow(rows, R.drawable.ic_settings, R.string.tv_settings, 0, SystemSettings.intent(this, Settings.ACTION_SETTINGS));
-        addRow(rows, R.drawable.ic_picture, R.string.quick_picture, 0, SystemSettings.displayIntent(this));
-        addRow(rows, R.drawable.ic_wifi, R.string.quick_network, 0, SystemSettings.intent(this, Settings.ACTION_WIFI_SETTINGS));
-        addRow(rows, R.drawable.ic_apps, R.string.quick_apps, R.string.quick_apps_hint,
-                SystemSettings.intent(this, Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS));
+        addRow(rows, R.drawable.ic_settings, R.string.system_settings, 0,
+                SystemSettings.intent(this, Settings.ACTION_SETTINGS));
         // Through Home, so it rebuilds with the new choices when Launcher settings closes.
         addRow(rows, R.drawable.ic_home_settings, R.string.launcher_settings, 0,
                 new Intent(this, MainActivity.class).setAction(MainActivity.ACTION_LAUNCHER_SETTINGS));
+        addRow(rows, R.drawable.ic_picture, R.string.quick_picture, 0,
+                SystemSettings.displayIntent(this));
+        addRow(rows, R.drawable.ic_wifi, R.string.quick_network, 0,
+                SystemSettings.intent(this, Settings.ACTION_WIFI_SETTINGS));
+        addRow(rows, R.drawable.ic_quick_cards, R.string.module_cards, 0,
+                new Intent(this, MainActivity.class).setAction(MainActivity.ACTION_MODULE_CARDS));
+        addRow(rows, R.drawable.ic_quick_reorder, R.string.reorder_dock_and_apps, 0,
+                new Intent(this, MainActivity.class).setAction(MainActivity.ACTION_REORDER));
+        addRow(rows, R.drawable.ic_apps, R.string.quick_apps, R.string.quick_apps_hint,
+                SystemSettings.intent(this, Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS));
         rows.getChildAt(0).requestFocus();
     }
 

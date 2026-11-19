@@ -62,6 +62,7 @@ public final class LauncherSettingsActivity extends Activity {
     private TextView followThemeChoice;
     private TextView openOnStartChoice;
     private TextView sectionTitle;
+    private View settingsDockPanel;
     private android.widget.ScrollView settingsScroll;
     private TextView[] navItems;
     private View[] categoryPanels;
@@ -115,7 +116,8 @@ public final class LauncherSettingsActivity extends Activity {
         choices = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE);
         Config config = Config.load(this);
         View reorderChoice = findViewById(R.id.reorderChoice);
-        reorderChoice.setVisibility(config.launcherSettingsButton ? View.VISIBLE : View.GONE);
+        View reorderRow = findViewById(R.id.reorderRow);
+        if (reorderRow != null) reorderRow.setVisibility(config.launcherSettingsButton ? View.VISIBLE : View.GONE);
         reorderChoice.setOnClickListener(v -> {
             setResult(RESULT_OK, new Intent().putExtra(EXTRA_REORDER, true));
             finish();
@@ -347,8 +349,9 @@ public final class LauncherSettingsActivity extends Activity {
             refresh();
         });
         openOnStartChoice = findViewById(R.id.openOnStartChoice);
+        View openOnStartRow = findViewById(R.id.openOnStartRow);
         if (config.openOnStartChoice) {
-            openOnStartChoice.setVisibility(View.VISIBLE);
+            if (openOnStartRow != null) openOnStartRow.setVisibility(View.VISIBLE);
             openOnStartChoice.setOnClickListener(v -> showOpenOnStartPicker());
         }
         followThemeChoice = findViewById(R.id.followThemeChoice);
@@ -396,6 +399,7 @@ public final class LauncherSettingsActivity extends Activity {
                 open(SystemSettings.intent(this, Settings.ACTION_SETTINGS)));
 
         sectionTitle = findViewById(R.id.sectionTitle);
+        settingsDockPanel = findViewById(R.id.settingsDockPanel);
         settingsScroll = findViewById(R.id.settingsScroll);
         TextView versionView = findViewById(R.id.settingsVersion);
         if (versionView != null) versionView.setText("PureBoxTV v" + BuildConfig.VERSION_NAME);
@@ -738,61 +742,77 @@ public final class LauncherSettingsActivity extends Activity {
         for (int i = 0; i < idleClockChoices.length; i++) {
             idleClockChoices[i].setSelected(idleClockMinutes == IDLE_CLOCK_MINUTES[i]);
         }
-        animationsChoice.setText(getString(R.string.animations_state,
-                getString(animations ? R.string.on : R.string.off)));
-        advancedChoice.setText(getString(R.string.advanced_effects_state,
-                getString(advancedEffects ? R.string.on : R.string.off)));
+        applyDockPanelStyle();
+        setTogglePill(animationsChoice, animations);
+        setTogglePill(advancedChoice, advancedEffects);
         advancedChoice.setEnabled(animations);
-        advancedChoice.setAlpha(animations ? 1f : 0.5f);
+        advancedChoice.setAlpha(animations ? 1f : 0.45f);
+
         String wallpaperCurrent = choices.getString(Config.WALLPAPER_CHOICE_KEY, null);
-        wallpaperChoice.setText(getString(R.string.wallpaper_state,
-                spotlightEnabled ? getString(R.string.wallpaper_spotlight_active)
-                        : "none".equals(wallpaperCurrent) ? getString(R.string.wallpaper_none)
-                        : wallpaperCurrent != null ? wallpaperCurrent
-                        : getString(R.string.wallpaper_theme_default)));
-        spotlightEnabledChoice.setText(getString(R.string.spotlight_enabled_state,
-                getString(spotlightEnabled ? R.string.on : R.string.off)));
-        tmdbApiKeyChoice.setText(getString(R.string.tmdb_api_key_state,
-                formatApiKeyState(SpotlightManager.getTmdbApiKey(this))));
-        fanartApiKeyChoice.setText(getString(R.string.fanart_api_key_state,
-                formatApiKeyState(SpotlightManager.getFanartApiKey(this))));
-        tvdbApiKeyChoice.setText(getString(R.string.tvdb_api_key_state,
-                formatApiKeyState(SpotlightManager.getTvdbApiKey(this))));
-        float apiAlpha = spotlightEnabled ? 1f : 0.5f;
+        wallpaperChoice.setText(spotlightEnabled ? getString(R.string.wallpaper_spotlight_active)
+                : "none".equals(wallpaperCurrent) ? getString(R.string.wallpaper_none)
+                : wallpaperCurrent != null ? wallpaperCurrent
+                : getString(R.string.wallpaper_theme_default));
+        wallpaperChoice.setSelected(!spotlightEnabled && wallpaperCurrent != null && !"none".equals(wallpaperCurrent));
+
+        setTogglePill(spotlightEnabledChoice, spotlightEnabled);
+        tmdbApiKeyChoice.setText(formatApiKeyState(SpotlightManager.getTmdbApiKey(this)));
+        fanartApiKeyChoice.setText(formatApiKeyState(SpotlightManager.getFanartApiKey(this)));
+        tvdbApiKeyChoice.setText(formatApiKeyState(SpotlightManager.getTvdbApiKey(this)));
+        float apiAlpha = spotlightEnabled ? 1f : 0.45f;
         tmdbApiKeyChoice.setAlpha(apiAlpha);
         fanartApiKeyChoice.setAlpha(apiAlpha);
         tvdbApiKeyChoice.setAlpha(apiAlpha);
-        performanceModeChoice.setText(getString(R.string.performance_mode_state,
-                getString(performanceMode ? R.string.on : R.string.off)));
-        dockBandChoice.setText(getString(R.string.dock_band_state,
-                getString(dockBand ? R.string.on : R.string.off)));
-        dockGlassChoice.setText(getString(R.string.dock_glass_state,
-                getString(dockGlass ? R.string.on : R.string.off)));
-        dockGlassChoice.setAlpha(dockBand ? 1f : 0.5f);
-        alwaysShowNamesChoice.setText(getString(R.string.always_show_names_state,
-                getString(alwaysShowNames ? R.string.on : R.string.off)));
-        showGreetingChoice.setText(getString(R.string.show_greeting_state,
-                getString(showGreeting ? R.string.on : R.string.off)));
-        greetingNameChoice.setText(getString(R.string.greeting_name_state,
-                greetingName.isEmpty() ? getString(R.string.off) : greetingName));
-        greetingNameChoice.setAlpha(showGreeting ? 1f : 0.5f);
-        showStatsChoice.setText(getString(R.string.show_stats_state,
-                getString(showStats ? R.string.on : R.string.off)));
-        showWeatherChoice.setText(getString(R.string.show_weather_state,
-                getString(showWeather ? R.string.on : R.string.off)));
-        weatherCityChoice.setText(getString(R.string.weather_city_state,
-                weatherCity.isEmpty() ? getString(R.string.weather_city_auto) : weatherCity));
-        weatherCityChoice.setAlpha(showWeather ? 1f : 0.5f);
-        ambientGlowChoice.setText(getString(R.string.ambient_glow_state,
-                getString(ambientGlow ? R.string.on : R.string.off)));
-        appGlowChoice.setText(getString(R.string.app_glow_state,
-                getString(appGlow ? R.string.on : R.string.off)));
-        libraryButtonChoice.setText(getString(R.string.library_button_state,
-                getString(libraryButton ? R.string.on : R.string.off)));
-        showLibraryPillChoice.setText(getString(R.string.show_library_pill_state,
-                getString(showLibraryPill ? R.string.on : R.string.off)));
-        openOnStartChoice.setText(getString(R.string.open_on_start_state, openOnStartLabel()));
-        followThemeChoice.setSelected(!hasOnTvChoices());
+
+        setTogglePill(performanceModeChoice, performanceMode);
+        setTogglePill(dockBandChoice, dockBand);
+        setTogglePill(dockGlassChoice, dockGlass);
+        dockGlassChoice.setAlpha(dockBand ? 1f : 0.45f);
+        setTogglePill(alwaysShowNamesChoice, alwaysShowNames);
+        setTogglePill(showGreetingChoice, showGreeting);
+        greetingNameChoice.setText(greetingName.isEmpty() ? getString(R.string.off) : greetingName);
+        greetingNameChoice.setSelected(!greetingName.isEmpty());
+        greetingNameChoice.setAlpha(showGreeting ? 1f : 0.45f);
+        setTogglePill(showStatsChoice, showStats);
+        setTogglePill(showWeatherChoice, showWeather);
+        weatherCityChoice.setText(weatherCity.isEmpty() ? getString(R.string.weather_city_auto) : weatherCity);
+        weatherCityChoice.setSelected(!weatherCity.isEmpty());
+        weatherCityChoice.setAlpha(showWeather ? 1f : 0.45f);
+        setTogglePill(ambientGlowChoice, ambientGlow);
+        setTogglePill(appGlowChoice, appGlow);
+        setTogglePill(libraryButtonChoice, libraryButton);
+        setTogglePill(showLibraryPillChoice, showLibraryPill);
+        openOnStartChoice.setText(openOnStartLabel());
+        followThemeChoice.setSelected(false);
+    }
+
+    private void setTogglePill(TextView pill, boolean on) {
+        pill.setText(getString(on ? R.string.on : R.string.off));
+        pill.setSelected(on);
+    }
+
+    /** Styles the right-hand container identically to the Home screen's DockDecoration (glass & dock_opacity). */
+    private void applyDockPanelStyle() {
+        if (settingsDockPanel == null) return;
+        float density = getResources().getDisplayMetrics().density;
+        float scale = Math.max(0, Math.min(100, dockOpacity)) / 100f;
+        android.graphics.drawable.GradientDrawable bg;
+        if (dockGlass) {
+            int topAlpha = Math.max(0x0A, Math.round(0x58 * scale));
+            int bottomAlpha = Math.max(0x05, Math.round(0x28 * scale));
+            bg = new android.graphics.drawable.GradientDrawable(
+                    android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                    new int[] { (topAlpha << 24) | 0xFFFFFF, (bottomAlpha << 24) | 0xD8E0E8 });
+        } else {
+            int alpha = Math.round(dockOpacity * 2.55f);
+            bg = new android.graphics.drawable.GradientDrawable();
+            bg.setColor((alpha << 24) | 0x1A1E24);
+        }
+        bg.setCornerRadius(26f * density);
+        int baseEdgeAlpha = dockGlass ? 0x66 : 0x33;
+        int edgeAlpha = Math.max(0x10, Math.round(baseEdgeAlpha * scale));
+        bg.setStroke(Math.max(1, Math.round(density)), (edgeAlpha << 24) | 0xFFFFFF);
+        settingsDockPanel.setBackground(bg);
     }
 
     private boolean hasOnTvChoices() {
