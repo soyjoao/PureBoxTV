@@ -235,6 +235,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean lunar;
     private int lunarOffset;
     private TextView stats;
+    private TextView weatherView;
+    private WeatherManager weatherManager;
+    private boolean showWeather;
+    private String weatherCity = "";
+    private static final long RELEASE_STOPPED_MS = 3 * 60_000L;
+    private final Runnable releaseStopped = () -> {
+        if (this.started) return;
+        releaseArtwork();
+        Runtime.getRuntime().gc();
+    };
     private List<RaceWeekend.Race> raceCalendar;
     private View racePanel;
     private TextView raceKicker, raceHeadline, raceSessions;
@@ -681,6 +691,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         btnWifi = findViewById(R.id.btnWifi);
         shamsiDate = findViewById(R.id.shamsiDate);
         stats = findViewById(R.id.stats);
+        weatherView = findViewById(R.id.weather);
+        showWeather = cfg.showWeather;
+        weatherCity = cfg.weatherCity;
+        if (showWeather && weatherView != null) {
+            weatherManager = new WeatherManager(this);
+            String cachedWeather = weatherManager.cachedLine(weatherCity);
+            if (cachedWeather != null) {
+                weatherView.setText(cachedWeather);
+                weatherView.setVisibility(View.VISIBLE);
+            }
+        }
         raceCalendar = cfg.raceCalendar;
         racePanel = findViewById(R.id.racePanel);
         raceKicker = findViewById(R.id.raceKicker);
@@ -1177,6 +1198,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         super.onStart();
         stopped = false;
         started = true;
+        handler.removeCallbacks(releaseStopped);
+        if (showWeather && weatherManager != null && weatherView != null) {
+            weatherManager.refresh(weatherCity, line -> {
+                if (weatherView != null && line != null && !line.isEmpty()) {
+                    weatherView.setText(line);
+                    weatherView.setVisibility(View.VISIBLE);
+                }
+            });
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(timeReceiver, timeFilter, Context.RECEIVER_NOT_EXPORTED);
         } else {
@@ -1455,6 +1485,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (spotlightManager != null) {
             spotlightManager.trimMemory(true);
         }
+        if (MemoryTrimPolicy.releaseWhenStopped(Build.VERSION.SDK_INT,
+                HomeKeyService.running != null || InputKeyService.running != null)) {
+            handler.postDelayed(releaseStopped, RELEASE_STOPPED_MS);
+        }
     }
 
     /**
@@ -1468,6 +1502,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // RUNNING_LOW and CRITICAL also arrive while Home is visible when an accessibility service keeps the
         // process in the foreground; never blank the screen the owner is looking at.
         if (!MemoryTrimPolicy.shouldRelease(level, started)) return;
+        releaseArtwork();
+    }
+
+    /** Every tile's artwork and the wallpaper's texture; Home rebuilds both on the way back. */
+    private void releaseArtwork() {
         adapter.clear();
         // Detach the adapter too: with Home stopped no layout pass runs, so the tile views (and the bitmaps
         // they hold) would stay attached until Home comes back. setAdapter(null) recycles them now.
@@ -1510,6 +1549,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (tree.isAlive()) tree.removeOnGlobalFocusChangeListener(glassFocusListener);
         RemoteKeys.release(this);
         cancelHoldOk();
+        handler.removeCallbacks(releaseStopped);
+        if (weatherManager != null) weatherManager.close();
         if (gameDay != null) gameDay.shutdown();
         unregisterReceiver(packageReceiver);
         if (openOnStartOnWake) unregisterReceiver(wakeReceiver);
@@ -3384,21 +3425,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void refreshPillsAfterNextDraw() {
-        root.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
-            @Override
-            public boolean onPreDraw() {
-                root.getViewTreeObserver().removeOnPreDrawListener(this);
-                // Posted from inside the frame's traversal, so it runs after that frame is drawn. A post straight
-                // from onResume would run first: the frame is only scheduled after onResume returns.
-                handler.post(() -> {
-                    if (isDestroyed()) return;
-                    updateWifiLabel();
-                    updateInputsButton();
-                });
-                return true;
-            }
+        // After that frame is drawn; a resume that changes nothing on screen still draws once, so the refresh runs.
+        FirstFrame.afterNextDraw(root, 0, () -> {
+            if (isDestroyed()) return;
+            updateWifiLabel();
+            updateInputsButton();
         });
-        root.invalidate();   // a resume that changes nothing on screen still draws once, so the refresh runs
     }
 
     /** Shows the Wi-Fi network name on the button when we can read it, otherwise the connection type. */

@@ -52,6 +52,8 @@ public final class LauncherSettingsActivity extends Activity {
     private TextView showGreetingChoice;
     private TextView greetingNameChoice;
     private TextView showStatsChoice;
+    private TextView showWeatherChoice;
+    private TextView weatherCityChoice;
     private TextView ambientGlowChoice;
     private TextView appGlowChoice;
     private TextView libraryButtonChoice;
@@ -71,6 +73,8 @@ public final class LauncherSettingsActivity extends Activity {
     private boolean showGreeting;
     private String greetingName;
     private boolean showStats;
+    private boolean showWeather;
+    private String weatherCity;
     private boolean ambientGlow;
     private boolean appGlow;
     private boolean libraryButton;
@@ -115,6 +119,8 @@ public final class LauncherSettingsActivity extends Activity {
         showGreeting = config.showGreeting;
         greetingName = config.greetingName;
         showStats = config.showStats;
+        showWeather = config.showWeather;
+        weatherCity = config.weatherCity;
         ambientGlow = config.ambientGlow;
         appGlow = config.appGlow;
         libraryButton = config.libraryButton;
@@ -281,6 +287,15 @@ public final class LauncherSettingsActivity extends Activity {
             changed();
             refresh();
         });
+        showWeatherChoice = findViewById(R.id.showWeatherChoice);
+        showWeatherChoice.setOnClickListener(v -> {
+            showWeather = !showWeather;
+            choices.edit().putBoolean(Config.SHOW_WEATHER_KEY, showWeather).apply();
+            changed();
+            refresh();
+        });
+        weatherCityChoice = findViewById(R.id.weatherCityChoice);
+        weatherCityChoice.setOnClickListener(v -> showWeatherCityDialog());
         ambientGlowChoice = findViewById(R.id.ambientGlowChoice);
         ambientGlowChoice.setOnClickListener(v -> {
             ambientGlow = !ambientGlow;
@@ -324,6 +339,7 @@ public final class LauncherSettingsActivity extends Activity {
                     .remove(Config.DOCK_BAND_KEY).remove(Config.DOCK_GLASS_KEY)
                     .remove(Config.ALWAYS_SHOW_NAMES_KEY).remove(Config.SHOW_GREETING_KEY)
                     .remove(Config.GREETING_NAME_KEY).remove(Config.SHOW_STATS_KEY)
+                    .remove(Config.SHOW_WEATHER_KEY).remove(Config.WEATHER_CITY_KEY)
                     .remove(Config.AMBIENT_GLOW_KEY).remove(Config.APP_GLOW_KEY)
                     .remove(Config.LIBRARY_BUTTON_KEY).remove(Config.SHOW_LIBRARY_PILL_KEY).commit();
             Config current = Config.load(this);
@@ -340,6 +356,8 @@ public final class LauncherSettingsActivity extends Activity {
             showGreeting = current.showGreeting;
             greetingName = current.greetingName;
             showStats = current.showStats;
+            showWeather = current.showWeather;
+            weatherCity = current.weatherCity;
             ambientGlow = current.ambientGlow;
             appGlow = current.appGlow;
             libraryButton = current.libraryButton;
@@ -538,6 +556,42 @@ public final class LauncherSettingsActivity extends Activity {
         dialog.show();
     }
 
+    private void showWeatherCityDialog() {
+        float density = getResources().getDisplayMetrics().density;
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle(R.string.weather_city_label);
+        final EditText input = new EditText(this);
+        input.setText(weatherCity);
+        input.setHint(R.string.weather_city_auto);
+        input.setSingleLine(true);
+        input.setTextColor(Color.WHITE);
+        int pad = (int) (18 * density);
+        input.setPadding(pad, pad, pad, pad);
+        builder.setView(input);
+        builder.setPositiveButton(R.string.save, (d, which) -> {
+            weatherCity = input.getText().toString().trim();
+            if (weatherCity.isEmpty()) {
+                choices.edit().remove(Config.WEATHER_CITY_KEY).apply();
+            } else {
+                choices.edit().putString(Config.WEATHER_CITY_KEY, weatherCity).apply();
+            }
+            changed();
+            refresh();
+        });
+        builder.setNeutralButton(R.string.reset, (d, which) -> {
+            choices.edit().remove(Config.WEATHER_CITY_KEY).apply();
+            weatherCity = Config.load(this).weatherCity;
+            changed();
+            refresh();
+        });
+        builder.setNegativeButton(android.R.string.cancel, null);
+        AlertDialog dialog = builder.create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+        }
+        dialog.show();
+    }
+
     private void refresh() {
         for (int i = 0; i < columnChoices.length; i++) {
             columnChoices[i].setSelected(columns == i + 4);
@@ -587,6 +641,11 @@ public final class LauncherSettingsActivity extends Activity {
         greetingNameChoice.setAlpha(showGreeting ? 1f : 0.5f);
         showStatsChoice.setText(getString(R.string.show_stats_state,
                 getString(showStats ? R.string.on : R.string.off)));
+        showWeatherChoice.setText(getString(R.string.show_weather_state,
+                getString(showWeather ? R.string.on : R.string.off)));
+        weatherCityChoice.setText(getString(R.string.weather_city_state,
+                weatherCity.isEmpty() ? getString(R.string.weather_city_auto) : weatherCity));
+        weatherCityChoice.setAlpha(showWeather ? 1f : 0.5f);
         ambientGlowChoice.setText(getString(R.string.ambient_glow_state,
                 getString(ambientGlow ? R.string.on : R.string.off)));
         appGlowChoice.setText(getString(R.string.app_glow_state,
@@ -608,6 +667,7 @@ public final class LauncherSettingsActivity extends Activity {
                 || choices.contains(Config.DOCK_BAND_KEY) || choices.contains(Config.DOCK_GLASS_KEY)
                 || choices.contains(Config.ALWAYS_SHOW_NAMES_KEY) || choices.contains(Config.SHOW_GREETING_KEY)
                 || choices.contains(Config.GREETING_NAME_KEY) || choices.contains(Config.SHOW_STATS_KEY)
+                || choices.contains(Config.SHOW_WEATHER_KEY) || choices.contains(Config.WEATHER_CITY_KEY)
                 || choices.contains(Config.AMBIENT_GLOW_KEY) || choices.contains(Config.APP_GLOW_KEY)
                 || choices.contains(Config.LIBRARY_BUTTON_KEY) || choices.contains(Config.SHOW_LIBRARY_PILL_KEY);
     }

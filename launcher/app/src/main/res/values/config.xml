@@ -486,6 +486,10 @@
     <!-- One line under the clock: CPU, free memory and free storage. Off by default; a theme can set
          "show_stats": true. Nothing is read, and the clock does not move, while this is false. -->
     <bool name="show_stats">false</bool>
+    <!-- Optional weather line under the clock powered by Open-Meteo (no API key required). -->
+    <bool name="show_weather">true</bool>
+    <!-- Optional city name for weather; empty uses approximate IP location automatically. -->
+    <string name="weather_city" translatable="false"></string>
 
     <!-- Each team's next game in the F1 panel's place under the clock, rotating with the theme's F1 weekend: the package
          of an add-on that publishes them (the Game Day add-on: io.github.justinnewman.gameday; contract in docs/modules.md).

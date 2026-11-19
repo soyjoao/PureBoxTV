@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.os.Process;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -31,6 +32,8 @@ import java.util.concurrent.Executors;
 
 /** Displays and rotates a theme's local wallpaper images while Home is visible. */
 final class WallpaperPlayer {
+    /** After the frame that first draws an ordinary bitmap: its copy to GPU memory, once the tiles' entrance is over. */
+    private static final long GPU_COPY_DELAY_MS = 1_000;
     private final FrameLayout root;
     private final ImageView image;
     private final int backgroundColor;
@@ -48,8 +51,9 @@ final class WallpaperPlayer {
     private final int dimColor;
     /** The picture on screen, released once the next one has been drawn. */
     private Bitmap current;
-    private boolean active;
-    private boolean closed;
+    /** Read on the decoder thread too: a picture decoded for a Home that left is not copied to GPU memory. */
+    private volatile boolean active;
+    private volatile boolean closed;
     private boolean loading;
     private String displayed = "";
     /** wallpaper_captions: the shown picture's name from wallpapers/captions.txt; null when off or there are none. */
@@ -177,8 +181,10 @@ final class WallpaperPlayer {
         }
         if (selected == null || selected.getName().equals(displayed)) return;
         File next = selected;
+        int priority = decodePriority(current == null);
         loading = true;
         decoder.execute(() -> {
+            priority(priority);
             Bitmap bitmap = decode(next);
             root.post(() -> {
                 loading = false;
@@ -272,6 +278,47 @@ final class WallpaperPlayer {
         root.setBackground(null);
         image.setImageBitmap(bitmap);
         if (old != null && old != bitmap) image.postDelayed(old::recycle, 500);
+        if (bitmap.getConfig() != Bitmap.Config.HARDWARE) {
+            loading = true;
+            FirstFrame.afterNextDraw(root, GPU_COPY_DELAY_MS, this::toGpu);
+        }
+    }
+
+    /** Moves the ordinary bitmap on screen into GPU memory off the main thread. */
+    private void toGpu() {
+        if (closed) return;
+        Bitmap soft = current;
+        decoder.execute(() -> {
+            priority(Process.THREAD_PRIORITY_BACKGROUND);
+            Bitmap gpu = soft == null ? null : hardware(soft);
+            root.post(() -> {
+                loading = false;
+                if (gpu != null && current == soft && !closed) show(gpu);
+                else if (gpu != null) gpu.recycle();
+                update();
+            });
+        });
+    }
+
+    /** A copy in GPU memory, or null when none can be made; the bitmap is then kept as it is. */
+    private static Bitmap hardware(Bitmap bitmap) {
+        try {
+            return bitmap.copy(Bitmap.Config.HARDWARE, false);
+        } catch (RuntimeException | OutOfMemoryError failure) {
+            return null;
+        }
+    }
+
+    /** Background priority for rotations; default priority when filling an empty screen after onTrimMemory. */
+    static int decodePriority(boolean screenEmpty) {
+        return screenEmpty ? Process.THREAD_PRIORITY_DEFAULT : Process.THREAD_PRIORITY_BACKGROUND;
+    }
+
+    private static void priority(int priority) {
+        try {
+            Process.setThreadPriority(priority);
+        } catch (RuntimeException ignored) {
+        }
     }
 
     private Bitmap decode(File file) {
@@ -296,6 +343,7 @@ final class WallpaperPlayer {
             Bitmap decoded = BitmapFactory.decodeFile(file.getPath(), options);
             if (decoded == null) return null;
             if (dimColor != 0) new Canvas(decoded).drawColor(dimColor);
+            if (!active || closed) return decoded;
             // One copy in GPU memory instead of a software bitmap plus its texture; the decode stays off the UI
             // thread for rotations, and Home's return no longer uploads 4-8 MB to the GPU.
             Bitmap gpu = decoded.copy(Bitmap.Config.HARDWARE, false);

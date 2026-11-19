@@ -180,6 +180,10 @@
     <string name="greeting_name_label">Name in greeting</string>
     <string name="greeting_name_state">Name in greeting: %1$s</string>
     <string name="show_stats_state">System stats (CPU/RAM/Storage): %1$s</string>
+    <string name="show_weather_state">Clock weather (Open-Meteo): %1$s</string>
+    <string name="weather_city_label">Weather city</string>
+    <string name="weather_city_state">Weather city: %1$s</string>
+    <string name="weather_city_auto">Automatic (IP)</string>
     <string name="ambient_glow_state">Ambient color glow: %1$s</string>
     <string name="app_glow_state">Colored focus highlight: %1$s</string>
     <string name="library_button_state">App library button in top bar: %1$s</string>

@@ -51,6 +51,8 @@ final class Config {
     static final String SHOW_GREETING_KEY = "show_greeting";
     static final String GREETING_NAME_KEY = "greeting_name";
     static final String SHOW_STATS_KEY = "show_stats";
+    static final String SHOW_WEATHER_KEY = "show_weather";
+    static final String WEATHER_CITY_KEY = "weather_city";
     static final String AMBIENT_GLOW_KEY = "ambient_glow";
     static final String APP_GLOW_KEY = "app_glow";
     static final String LIBRARY_BUTTON_KEY = "library_button";
@@ -169,6 +171,10 @@ final class Config {
     final boolean showHomeSettingsShortcut;
     /** One line under the clock: CPU, free memory, free storage. Off unless config or a theme turns it on. */
     final boolean showStats;
+    /** Optional weather line under the clock (Open-Meteo, no API key required). */
+    final boolean showWeather;
+    /** Optional city name for weather; empty uses automatic IP location. */
+    final String weatherCity;
     /** game_day: the package of an add-on that publishes each team's next game (GameDay); empty = off. */
     final String gameDay;
     /** App library pill after the last Home row (config.xml app_library). */
@@ -314,7 +320,7 @@ final class Config {
                    boolean handleViewInputs, boolean tileMenu, boolean dockEvenPadding, boolean dockBand, boolean cinematicDots, boolean cinematicWhiteFocus, boolean wifiStatusColor, int cinematicScrim, int cinematicArt,
                    Map<String, Set<String>> wallpaperMoods, boolean gamepadPassthrough, boolean consumeVolumeKeys, boolean volumePausesFilter, boolean homeIgnoreChannelKeys, boolean powerOnHome, boolean homeLongPressHome, boolean wifiStatusWarnings, List<String> topBarApps, boolean showGreeting, boolean headerWhite, boolean clockWallpaper, int clockWallpaperDim, boolean clockGlow, String glassStyle, boolean singleRow, boolean dockBandAll, boolean lunarDate, int lunarUtcOffset, boolean dateBelowClock, boolean vpnPill, String locale, boolean powerOnHomeAlways, boolean inputsConnectedOnly, boolean inputsCecStateOnly,
                    int openOnStartNetworkWait, boolean openOnStartOnWake, boolean iconOnlyVpn, String clockFormat, boolean backOpensClock, boolean glowSnap,
-                   boolean settingsKeyClearTask) {
+                   boolean settingsKeyClearTask, boolean showWeather, String weatherCity) {
         this.handleViewInputs = handleViewInputs;
         this.tileMenu = tileMenu;
         this.inputKeycodes = inputKeycodes;
@@ -376,6 +382,8 @@ final class Config {
         this.vpnApp = vpnApp;
         this.showHomeSettingsShortcut = showHomeSettingsShortcut;
         this.showStats = showStats;
+        this.showWeather = showWeather;
+        this.weatherCity = weatherCity;
         this.gameDay = gameDay;
         this.appLibrary = appLibrary;
         this.appLibrarySelection = appLibrarySelection;
@@ -512,6 +520,8 @@ final class Config {
         String vpn = res.getString(R.string.vpn_app).trim();
         boolean homeSettings = res.getBoolean(R.bool.show_home_settings_shortcut);
         boolean showStats = res.getBoolean(R.bool.show_stats);
+        boolean showWeather = res.getBoolean(R.bool.show_weather);
+        String weatherCity = res.getString(R.string.weather_city).trim();
         String gameDay = res.getString(R.string.game_day).trim();
         boolean library = res.getBoolean(R.bool.app_library);
         boolean librarySelection = res.getBoolean(R.bool.app_library_selection);
@@ -629,6 +639,8 @@ final class Config {
             vpn = string(json, "vpn_app", vpn);
             homeSettings = bool(json, "show_home_settings_shortcut", homeSettings);
             showStats = bool(json, "show_stats", showStats);
+            showWeather = bool(json, SHOW_WEATHER_KEY, showWeather);
+            weatherCity = string(json, WEATHER_CITY_KEY, weatherCity).trim();
             gameDay = string(json, "game_day", gameDay);
             library = bool(json, "app_library", library);
             librarySelection = bool(json, "app_library_selection", librarySelection);
@@ -697,8 +709,7 @@ final class Config {
         if (chosenRows >= 0 && chosenRows <= 3) rowsBelow = chosenRows;
         animations = choices.getBoolean("animations", animations);
         advancedEffects = choices.getBoolean("advanced_effects", advancedEffects);
-        File wallpaper = dir != null ? new File(dir, WALLPAPER_NAME) : null;
-        if (wallpaper != null && !(wallpaper.isFile() && wallpaper.length() > 0)) wallpaper = null;
+        File wallpaper = resolveWallpaper(ctx, dir, mounted);
         // A theme can also switch the wallpaper off while the file is still there.
         boolean wallpaperEnabled = json == null || bool(json, "wallpaper", true);
         if (!wallpaperEnabled) wallpaper = null;
@@ -714,6 +725,8 @@ final class Config {
         showGreeting = choices.getBoolean(SHOW_GREETING_KEY, showGreeting);
         greetingName = choices.getString(GREETING_NAME_KEY, greetingName).trim();
         showStats = choices.getBoolean(SHOW_STATS_KEY, showStats);
+        showWeather = choices.getBoolean(SHOW_WEATHER_KEY, showWeather);
+        weatherCity = choices.getString(WEATHER_CITY_KEY, weatherCity).trim();
         ambientGlow = choices.getBoolean(AMBIENT_GLOW_KEY, ambientGlow);
         appGlow = choices.getBoolean(APP_GLOW_KEY, appGlow);
         libraryButton = choices.getBoolean(LIBRARY_BUTTON_KEY, libraryButton);
@@ -758,7 +771,7 @@ final class Config {
                 Math.max(0, Math.min(90, clockWallpaperDim)), clockGlow, glassStyle, singleRow && dockRow, dockBandAll, lunar, lunarOffset,
                 dateBelowClock, vpnPill, locale, powerOnHomeAlways, inputsConnectedOnly, inputsCecStateOnly,
                 Math.max(0, Math.min(600, openOnStartNetworkWait)), openOnStartOnWake, iconOnlyVpn, clockFormat, backOpensClock, glowSnap,
-                settingsKeyClearTask);
+                settingsKeyClearTask, showWeather, weatherCity);
     }
 
     /**
@@ -835,6 +848,32 @@ final class Config {
         } catch (Exception ignored) {
             return "absent";
         }
+    }
+
+    /**
+     * Resolves wallpaper.jpg, keeping a fallback copy in internal storage so Home still shows the wallpaper
+     * when it starts at boot before external storage (/sdcard) is mounted (Issue #4104).
+     */
+    private static File resolveWallpaper(Context ctx, File dir, boolean mounted) {
+        File copy = new File(ctx.getFilesDir(), WALLPAPER_NAME);
+        if (!mounted) {
+            return copy.isFile() && copy.length() > 0 ? copy : null;
+        }
+        File ext = dir != null ? new File(dir, WALLPAPER_NAME) : null;
+        if (ext == null || !ext.isFile() || ext.length() <= 0) {
+            if (copy.exists()) copy.delete();
+            return null;
+        }
+        if (!copy.isFile() || copy.length() != ext.length() || copy.lastModified() < ext.lastModified()) {
+            try (InputStream in = new FileInputStream(ext); FileOutputStream out = new FileOutputStream(copy)) {
+                byte[] buf = new byte[16384];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            } catch (IOException e) {
+                Log.w(TAG, "could not cache wallpaper copy: " + e.getMessage());
+            }
+        }
+        return ext;
     }
 
     /** Reads and parses the overlay; any problem means "no overlay", never a crash on the home screen. */

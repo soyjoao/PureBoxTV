@@ -210,6 +210,16 @@
             android:layout_marginTop="10dp" />
 
         <TextView
+            android:id="@+id/showWeatherChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/weatherCityChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
+
+        <TextView
             android:id="@+id/ambientGlowChoice"
             style="@style/SettingsRow"
             android:layout_marginTop="10dp" />

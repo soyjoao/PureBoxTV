@@ -373,24 +373,50 @@
 
             </LinearLayout>
 
-            <!-- Shown only when show_stats is on. Outside leftBlock, so the top buttons stay level with the clock
-                 row; gone, it takes no space. -->
-            <TextView
-                android:id="@+id/stats"
+            <!-- Optional weather and system stats lines under the clock. Outside leftBlock, so the top buttons
+                 stay level with the clock row; when both are gone, this takes no space. -->
+            <LinearLayout
+                android:id="@+id/subClockLines"
                 android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:layout_below="@id/leftBlock"
                 android:layout_alignStart="@id/leftBlock"
-                android:gravity="left"
-                android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:singleLine="true"
-                android:ellipsize="end"
-                android:textColor="#D9FFFFFF"
-                android:textSize="14sp"
-                android:fontFamily="@string/font_medium"
-                android:letterSpacing="0.04"
-                android:focusable="false"
-                android:visibility="gone" />
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/weather"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="left"
+                    android:singleLine="true"
+                    android:ellipsize="end"
+                    android:textColor="#E6FFFFFF"
+                    android:textSize="15sp"
+                    android:fontFamily="@string/font_medium"
+                    android:letterSpacing="0.02"
+                    android:shadowColor="#99000000"
+                    android:shadowDx="0"
+                    android:shadowDy="1"
+                    android:shadowRadius="4"
+                    android:focusable="false"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/stats"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:gravity="left"
+                    android:singleLine="true"
+                    android:ellipsize="end"
+                    android:textColor="#D9FFFFFF"
+                    android:textSize="14sp"
+                    android:fontFamily="@string/font_medium"
+                    android:letterSpacing="0.04"
+                    android:focusable="false"
+                    android:visibility="gone" />
+            </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/topButtons"

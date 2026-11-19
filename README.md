@@ -20,11 +20,13 @@ Projetado para oferecer visual moderno de cinema com **carrossel Spotlight em Fu
 
 - **Otimização agressiva de RAM e CPU (ideal para TV Box de 1 GB)**
   - Janela deslizante de apenas **3 Bitmaps decodificados na RAM** (anterior, atual e próximo) usando `Bitmap.Config.HARDWARE`.
-  - Liberação imediata de memória em `onStop` e `onTrimMemory`, reduzindo o uso do launcher de **~179 MB para ~62 MB**.
+  - Liberação imediata de memória em `onStop` e `onTrimMemory`, reduzindo o uso do launcher de **~179 MB para ~62 MB**, incluindo liberação automática após 3 min em segundo plano no Android 14+ com key helpers (PR #4190).
+  - Abertura mais rápida da Home no boot adiando o upload de GPU do wallpaper para após o primeiro frame (PR #4175) e fallback interno de `wallpaper.jpg` quando o `/sdcard` ainda não montou no boot (Issue #4104).
   - Inclui a correção de vazamento de memória em `recreate()` da v3.5 (`ConnectivityManager` via `ApplicationContext` + remoção do `OnGlobalFocusChangeListener`).
 
 - **Tela de Configurações do Launcher expandida**
   - **Protetor de tela (Relógio):** seletor direto na TV (`5 minutos`, `15 minutos`, `30 minutos`, `60 minutos` ou `Desligado`, padrão `15 minutos`).
+  - **Clima no relógio (Open-Meteo):** temperatura e condição atual ao vivo abaixo do relógio (100% gratuito, sem chave de API), com detecção automática por IP ou cidade personalizada nas configurações.
   - **Opacidade da faixa do dock** (`100%`, `70%`, `50%`, `30%`) funcionando também com o estilo vidro (*frosted glass*).
   - **Chaves de API editáveis direto pelo controle** (com mascaramento automático na lista para privacidade).
   - Controles rápidos na UI para faixa do dock, estilo vidro, nomes sempre visíveis, saudação, nome personalizado, estatísticas de CPU/RAM/Espaço, brilho ambiente, destaque colorido e botões da biblioteca de apps.
