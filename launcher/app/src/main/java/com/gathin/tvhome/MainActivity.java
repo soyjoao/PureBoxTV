@@ -186,10 +186,25 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean glowSnap;
     private boolean heroShown;
 
+    private View heroArtContainer;
     private ImageView heroArtNext;
+    private int backdropDimToken = 0;
+    private float backdropLoadAlpha = 1f;
+    private float backdropScrollAlpha = 1f;
     private TextView heroBadge;
     private TextView heroOverview;
-    private TextView heroRemoveHint;
+    private View heroRemoveHint;
+    private View heroActionPill;
+    private TextView heroActionPrefix;
+    private View heroActionBadgeBox;
+    private TextView heroActionService;
+    private GradientDrawable heroActionBadgeDrawable;
+    private int actionMarqueeToken = 0;
+    private View heroArrowLeft;
+    private View heroArrowRight;
+    private int spotlightFocusAnimToken = 0;
+    private View gridDimOverlay;
+    private boolean gridDimmed;
     private SpotlightManager spotlightManager;
     private int spotlightIndex = 0;
     private boolean spotlightFocused = false;
@@ -649,6 +664,29 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         heroOverview = findViewById(R.id.heroOverview);
         heroDots = findViewById(R.id.heroDots);
         heroRemoveHint = findViewById(R.id.heroRemoveHint);
+        heroActionPill = findViewById(R.id.heroActionPill);
+        heroActionPrefix = findViewById(R.id.heroActionPrefix);
+        heroActionBadgeBox = findViewById(R.id.heroActionBadgeBox);
+        heroActionService = findViewById(R.id.heroActionService);
+        heroArrowLeft = findViewById(R.id.heroArrowLeft);
+        heroArrowRight = findViewById(R.id.heroArrowRight);
+        gridDimOverlay = findViewById(R.id.gridDimOverlay);
+        if (gridDimOverlay != null) {
+            android.graphics.drawable.ShapeDrawable risingDim = new android.graphics.drawable.ShapeDrawable(
+                    new android.graphics.drawable.shapes.RectShape());
+            risingDim.setShaderFactory(new android.graphics.drawable.ShapeDrawable.ShaderFactory() {
+                @Override
+                public Shader resize(int width, int height) {
+                    return new LinearGradient(0, 0, 0, Math.max(1, height),
+                            new int[]{0x00000000, 0x55000000, 0xBD000000, 0xE6000000, 0xF2000000},
+                            new float[]{0f, 0.12f, 0.24f, 0.45f, 1f},
+                            Shader.TileMode.CLAMP);
+                }
+            });
+            gridDimOverlay.setBackground(risingDim);
+            gridDimOverlay.setAlpha(0f);
+        }
+        heroArtContainer = findViewById(R.id.heroArtContainer);
         heroArt = findViewById(R.id.heroArt);
         heroArtNext = findViewById(R.id.heroArtNext);
         heroBadge = findViewById(R.id.heroBadge);
@@ -890,10 +928,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             grid.post(this::refitGlass);
         });
 
-        // Keep the glass glued to its tile while the grid scrolls.
+        // Keep the glass glued to its tile while the grid scrolls, and progressively dim backdrop with scroll depth.
         grid.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) {
+                updateGridDimFromScroll(rv);
                 if (!glassShown) return;
                 glassTargetY -= dy;
                 glassScrollShift -= dy;
@@ -1631,6 +1670,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      */
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        // A real key, not onUserInteraction: that also runs when the firmware starts Live TV over Home at power-on.
+        if (event.getAction() == KeyEvent.ACTION_DOWN) HomeKeyService.keyOnHome();
         if (homeIgnoreChannelKeys && RemoteKeys.isChannelKey(event.getKeyCode())) return true;
         // Vendor keys (TCL Netflix button, 4062) never reach the key services, only the focused window, so their
         // "hold:" entries run here too or nowhere. Only while resumed: onPause releases Home's holds, and a DOWN
@@ -2009,6 +2050,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     public void onTileFocused(int position, View card) {
         lastFocused = position;
         lastFocusedKey = adapter.keyAt(position);
+        updateGridDim(!DockSlots.inDockRow(dockRow, singleRow, position, COLUMNS));
         // Focus restored before the first layout (cold start): the tile has no size yet, and the glass
         // would be sized to 2*pad. Run again once the tile is laid out.
         if (card.getWidth() == 0) {
@@ -2131,10 +2173,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void adjustHeroY() {
-        if (hero == null || lastDockTopInRoot <= 0) return;
+        if (hero == null) return;
         hero.post(() -> {
+            float dockTop = lastDockTopInRoot;
+            if (dockTop <= 0 && grid != null && grid.getChildCount() > 0) {
+                View first = grid.getChildAt(0);
+                View card = first != null ? first.findViewById(R.id.card) : null;
+                if (card != null && card.getHeight() > 0) {
+                    Rect r = new Rect(0, 0, card.getWidth(), card.getHeight());
+                    root.offsetDescendantRectToMyCoords(card, r);
+                    dockTop = r.top;
+                    lastDockTopInRoot = dockTop;
+                }
+            }
+            if (dockTop <= 0) return;
             float gapDp = 32f;
-            float y = lastDockTopInRoot - gapDp * density - hero.getHeight();
+            float y = dockTop - gapDp * density - hero.getHeight();
             hero.setY(y);
         });
     }
@@ -2189,15 +2243,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             hero.setBackground(null);
             if (hasFocus) {
                 hideGlass();
+                updateGridDim(false);
                 spotlightHandler.removeCallbacks(spotlightAutoRotate);
             } else {
                 spotlightHandler.removeCallbacks(spotlightAutoRotate);
                 spotlightHandler.postDelayed(spotlightAutoRotate, SPOTLIGHT_ROTATE_MS);
             }
-            if (heroRemoveHint != null) {
-                heroRemoveHint.setVisibility(hasFocus ? View.VISIBLE : View.GONE);
-            }
+            animateSpotlightFocus(hasFocus);
             updateSpotlightDots();
+            adjustHeroY();
         });
 
         hero.setOnKeyListener((v, keyCode, event) -> {
@@ -2318,12 +2372,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             int hDp;
             if (on) {
                 bg.setColor(0xFFFFFFFF);
-                wDp = spotlightFocused ? 22 : 7;
-                hDp = 7;
+                wDp = spotlightFocused ? 22 : 6;
+                hDp = 6;
             } else {
                 bg.setColor(0x55FFFFFF);
-                wDp = 5;
-                hDp = 5;
+                wDp = 6;
+                hDp = 6;
             }
             bg.setStroke(0, 0);
             bg.setCornerRadius((hDp / 2f) * density);
@@ -2350,9 +2404,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     heroBadge.setBackground(heroBadgeDrawable);
                 }
                 heroBadgeDrawable.setColor(item.badgeColor);
-                heroBadge.setVisibility(View.VISIBLE);
+                heroBadge.setVisibility(spotlightFocused ? View.INVISIBLE : View.VISIBLE);
             } else {
-                heroBadge.setVisibility(View.GONE);
+                heroBadge.setVisibility(View.INVISIBLE);
             }
         }
 
@@ -2379,13 +2433,295 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 heroOverview.setVisibility(View.INVISIBLE);
             }
         }
+        if (heroActionPill != null) {
+            String svc = item.service != null ? item.service.trim() : "";
+            if (svc.isEmpty()) {
+                if (heroActionPrefix != null) heroActionPrefix.setText(R.string.spotlight_open);
+                if (heroActionBadgeBox != null) heroActionBadgeBox.setVisibility(View.GONE);
+                ++actionMarqueeToken;
+            } else {
+                if (heroActionPrefix != null) heroActionPrefix.setText(R.string.spotlight_open_prefix);
+                if (heroActionBadgeBox != null) {
+                    heroActionBadgeBox.setVisibility(View.VISIBLE);
+                    if (heroActionBadgeDrawable == null) {
+                        heroActionBadgeDrawable = new GradientDrawable();
+                        heroActionBadgeDrawable.setCornerRadius(6 * density);
+                        heroActionBadgeBox.setBackground(heroActionBadgeDrawable);
+                    }
+                    heroActionBadgeDrawable.setColor(item.badgeColor);
+                }
+                if (heroActionService != null) {
+                    heroActionService.setText(svc);
+                    positionActionBadgeAndMarquee();
+                }
+            }
+        }
+    }
+
+    /**
+     * Positions the service text inside the colored pill badge synchronously when laid out (preventing
+     * any 1-frame horizontal jitter), and runs a smooth continuous ping-pong scroll only when overflowing.
+     */
+    private void positionActionBadgeAndMarquee() {
+        final int token = ++actionMarqueeToken;
+        if (heroActionBadgeBox == null || heroActionService == null) return;
+        final Runnable apply = () -> {
+            if (token != actionMarqueeToken) return;
+            int innerW = heroActionBadgeBox.getWidth()
+                    - heroActionBadgeBox.getPaddingLeft()
+                    - heroActionBadgeBox.getPaddingRight();
+            if (innerW <= 0) return;
+            float textW = heroActionService.getPaint().measureText(
+                    heroActionService.getText().toString().toUpperCase(Locale.getDefault()));
+            float overflow = textW - innerW;
+            if (overflow <= 2f) {
+                // Center short names cleanly inside the colored badge with zero jitter
+                heroActionService.setTranslationX((innerW - textW) / 2f);
+                return;
+            }
+            heroActionService.setTranslationX(0f);
+            if (!spotlightFocused) return;
+            final float pauseMs = 1300f;
+            final float travelMs = Math.max(1200f, (overflow / (34f * density)) * 1000f);
+            final float cycleMs = pauseMs + travelMs + pauseMs + travelMs;
+            android.view.Choreographer.getInstance().postFrameCallback(new android.view.Choreographer.FrameCallback() {
+                private long startNs = -1L;
+
+                @Override
+                public void doFrame(long frameTimeNanos) {
+                    if (token != actionMarqueeToken || !spotlightFocused || !resumed) return;
+                    if (startNs < 0L) {
+                        startNs = frameTimeNanos;
+                        android.view.Choreographer.getInstance().postFrameCallback(this);
+                        return;
+                    }
+                    float phase = ((frameTimeNanos - startNs) / 1_000_000f) % cycleMs;
+                    float pos;
+                    if (phase < pauseMs) {
+                        pos = 0f;
+                    } else if (phase < pauseMs + travelMs) {
+                        float t = (phase - pauseMs) / travelMs;
+                        pos = t * t * (3f - 2f * t);   // smoothstep forward
+                    } else if (phase < pauseMs + travelMs + pauseMs) {
+                        pos = 1f;
+                    } else {
+                        float t = (phase - pauseMs - travelMs - pauseMs) / travelMs;
+                        pos = 1f - (t * t * (3f - 2f * t));   // smoothstep back to start
+                    }
+                    heroActionService.setTranslationX(-overflow * pos);
+                    android.view.Choreographer.getInstance().postFrameCallback(this);
+                }
+            });
+        };
+        if (heroActionBadgeBox.getWidth() > 0) {
+            apply.run();
+        } else {
+            heroActionBadgeBox.post(apply);
+        }
+    }
+
+    /** Smooth 60 FPS Choreographer transition when entering or leaving Spotlight focus (works with animation scale 0). */
+    private void animateSpotlightFocus(final boolean focused) {
+        final int token = ++spotlightFocusAnimToken;
+        final boolean hasBadgeText = heroBadge != null && heroBadge.getText().length() > 0;
+        // Exact horizontal shift of heroDots when pill (206+14dp) + left arrow (18+6dp) appear/disappear
+        final float dotsShiftX = (206f + 14f + 18f + 6f) * density;
+        if (focused) {
+            if (heroActionPill != null) {
+                heroActionPill.setVisibility(View.VISIBLE);
+                heroActionPill.setAlpha(0f);
+                heroActionPill.setScaleX(0.94f);
+                heroActionPill.setScaleY(0.94f);
+                heroActionPill.setTranslationX(-10f * density);
+            }
+            if (heroArrowLeft != null) {
+                heroArrowLeft.setVisibility(View.VISIBLE);
+                heroArrowLeft.setAlpha(0f);
+                heroArrowLeft.setTranslationX(-dotsShiftX * 0.45f);
+            }
+            if (heroDots != null) {
+                heroDots.setTranslationX(-dotsShiftX);
+            }
+            if (heroArrowRight != null) {
+                heroArrowRight.setVisibility(View.VISIBLE);
+                heroArrowRight.setAlpha(0f);
+                heroArrowRight.setTranslationX(-dotsShiftX);
+            }
+            if (heroRemoveHint != null) {
+                heroRemoveHint.setVisibility(View.VISIBLE);
+                heroRemoveHint.setAlpha(0f);
+                heroRemoveHint.setTranslationX(-14f * density);
+            }
+            positionActionBadgeAndMarquee();
+        } else {
+            ++actionMarqueeToken;
+            if (hasBadgeText) {
+                heroBadge.setVisibility(View.VISIBLE);
+                heroBadge.setAlpha(0f);
+            }
+        }
+
+        if (!animations || reducedMotion) {
+            applySpotlightFocusFrame(focused, 1f, hasBadgeText, dotsShiftX);
+            return;
+        }
+
+        final float durationMs = focused ? 240f : 200f;
+        android.view.Choreographer.getInstance().postFrameCallback(new android.view.Choreographer.FrameCallback() {
+            private long startNs = -1L;
+
+            @Override
+            public void doFrame(long frameTimeNanos) {
+                if (token != spotlightFocusAnimToken) return;
+                if (startNs < 0L) {
+                    startNs = frameTimeNanos;
+                    android.view.Choreographer.getInstance().postFrameCallback(this);
+                    return;
+                }
+                float t = Math.min(1f, (frameTimeNanos - startNs) / 1_000_000f / durationMs);
+                float inv = 1f - t;
+                float eased = 1f - inv * inv * inv;   // smooth cubic ease-out
+                applySpotlightFocusFrame(focused, eased, hasBadgeText, dotsShiftX);
+                if (t < 1f) {
+                    android.view.Choreographer.getInstance().postFrameCallback(this);
+                }
+            }
+        });
+    }
+
+    private void applySpotlightFocusFrame(boolean focused, float eased, boolean hasBadgeText, float dotsShiftX) {
+        float controlsAlpha = focused ? eased : (1f - eased);
+        float dotsTx = focused ? (-dotsShiftX * (1f - eased)) : (-dotsShiftX * eased);
+        if (heroActionPill != null) {
+            heroActionPill.setAlpha(controlsAlpha);
+            float sc = 0.94f + 0.06f * controlsAlpha;
+            heroActionPill.setScaleX(sc);
+            heroActionPill.setScaleY(sc);
+            heroActionPill.setTranslationX(-10f * density * (1f - controlsAlpha));
+            if (!focused && eased >= 1f) {
+                heroActionPill.setVisibility(View.GONE);
+                heroActionPill.setTranslationX(0f);
+            }
+        }
+        if (heroDots != null) {
+            heroDots.setTranslationX((!focused && eased >= 1f) ? 0f : dotsTx);
+        }
+        if (heroArrowLeft != null) {
+            heroArrowLeft.setAlpha(controlsAlpha);
+            heroArrowLeft.setTranslationX(dotsTx * 0.45f);
+            if (!focused && eased >= 1f) {
+                heroArrowLeft.setVisibility(View.GONE);
+                heroArrowLeft.setTranslationX(0f);
+            }
+        }
+        if (heroArrowRight != null) {
+            heroArrowRight.setAlpha(controlsAlpha);
+            heroArrowRight.setTranslationX(dotsTx);
+            if (!focused && eased >= 1f) {
+                heroArrowRight.setVisibility(View.GONE);
+                heroArrowRight.setTranslationX(0f);
+            }
+        }
+        if (heroRemoveHint != null) {
+            heroRemoveHint.setAlpha(controlsAlpha);
+            heroRemoveHint.setTranslationX(-14f * density * (1f - controlsAlpha));
+            if (!focused && eased >= 1f) {
+                heroRemoveHint.setVisibility(View.GONE);
+                heroRemoveHint.setTranslationX(0f);
+            }
+        }
+        if (hasBadgeText && heroBadge != null) {
+            float badgeAlpha = focused ? (1f - eased) : eased;
+            heroBadge.setAlpha(badgeAlpha);
+            if (focused && eased >= 1f) heroBadge.setVisibility(View.INVISIBLE);
+        }
+    }
+
+    private void updateGridDim(boolean belowDock) {
+        gridDimmed = belowDock;
+        int scrollOffset = (grid != null && grid.canScrollVertically(-1)) ? grid.computeVerticalScrollOffset() : 0;
+        applyGridDim(scrollOffset);
+    }
+
+    private void updateGridDimFromScroll(RecyclerView rv) {
+        int scrollOffset = rv.canScrollVertically(-1) ? rv.computeVerticalScrollOffset() : 0;
+        applyGridDim(scrollOffset);
+    }
+
+    /** Continuous bottom-to-top dark curtain tied 1:1 to scrollOffset (zero snap/jump at dock boundary). */
+    private void applyGridDim(int scrollOffset) {
+        float scrollProgress = Math.max(0f, Math.min(1f, scrollOffset / (320f * density)));
+        if (gridDimOverlay != null) {
+            int h = gridDimOverlay.getHeight();
+            if (h <= 0) h = getResources().getDisplayMetrics().heightPixels;
+            if (scrollProgress <= 0.001f) {
+                gridDimOverlay.setAlpha(0f);
+                gridDimOverlay.setTranslationY(h);
+            } else {
+                // Smooth ease-out rise from 100% (off-bottom) to 16% (near header) with zero discontinuity
+                float eased = 1f - (1f - scrollProgress) * (1f - scrollProgress);
+                float targetY = h * (1.0f - 0.84f * eased);
+                gridDimOverlay.setAlpha(Math.min(1f, scrollProgress * 4f));
+                gridDimOverlay.setTranslationY(targetY);
+            }
+        }
+        if (hero != null && spotlightManager != null) {
+            float heroAlpha = Math.max(0f, 1f - scrollProgress * 3.5f);
+            hero.setAlpha(heroAlpha);
+        }
+        // Gently dim the backdrop poster itself in parallel as the user scrolls down (1.0 -> 0.45)
+        backdropScrollAlpha = 1f - 0.55f * scrollProgress;
+        applyBackdropAlpha();
+    }
+
+    private void applyBackdropAlpha() {
+        if (heroArtContainer != null) {
+            heroArtContainer.setAlpha(backdropLoadAlpha * backdropScrollAlpha);
+        }
+    }
+
+    /** Smoothly dims or restores the Spotlight backdrop container while waiting for uncached posters to load. */
+    private void animateBackdropBrightness(final float targetAlpha, final float durationMs) {
+        final int token = ++backdropDimToken;
+        if (heroArtContainer == null) return;
+        final float startAlpha = backdropLoadAlpha;
+        if (Math.abs(startAlpha - targetAlpha) < 0.01f || !animations || reducedMotion) {
+            backdropLoadAlpha = targetAlpha;
+            applyBackdropAlpha();
+            return;
+        }
+        android.view.Choreographer.getInstance().postFrameCallback(new android.view.Choreographer.FrameCallback() {
+            private long startNs = -1L;
+
+            @Override
+            public void doFrame(long frameTimeNanos) {
+                if (token != backdropDimToken) return;
+                if (startNs < 0L) {
+                    startNs = frameTimeNanos;
+                    android.view.Choreographer.getInstance().postFrameCallback(this);
+                    return;
+                }
+                float t = Math.min(1f, (frameTimeNanos - startNs) / 1_000_000f / durationMs);
+                float eased = t * t * (3f - 2f * t);
+                backdropLoadAlpha = startAlpha + (targetAlpha - startAlpha) * eased;
+                applyBackdropAlpha();
+                if (t < 1f) {
+                    android.view.Choreographer.getInstance().postFrameCallback(this);
+                }
+            }
+        });
     }
 
     private void setSpotlightTextAlpha(float alpha) {
-        if (heroBadge != null) heroBadge.setAlpha(alpha);
-        if (heroName != null) heroName.setAlpha(alpha);
-        if (heroMeta != null) heroMeta.setAlpha(alpha);
-        if (heroOverview != null) heroOverview.setAlpha(alpha);
+        setSpotlightTextMotion(alpha, 0f);
+    }
+
+    private void setSpotlightTextMotion(float alpha, float slideDp) {
+        float ty = slideDp * density;
+        if (heroBadge != null) { heroBadge.setAlpha(alpha); heroBadge.setTranslationY(ty); }
+        if (heroName != null) { heroName.setAlpha(alpha); heroName.setTranslationY(ty); }
+        if (heroMeta != null) { heroMeta.setAlpha(alpha); heroMeta.setTranslationY(ty); }
+        if (heroOverview != null) { heroOverview.setAlpha(alpha); heroOverview.setTranslationY(ty); }
     }
 
     private void showSpotlight(int index, boolean animate) {
@@ -2401,6 +2737,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
         if (!animate || !animations || reducedMotion) {
             ++crossfadeToken;
+            ++backdropDimToken;
+            backdropLoadAlpha = 1f;
+            applyBackdropAlpha();
             applySpotlightTexts(item);
             setSpotlightTextAlpha(1f);
             if (heroArt != null && heroArtNext != null && item.bitmap != null) {
@@ -2425,11 +2764,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
         final ImageView incoming;
         final ImageView outgoing;
+        final boolean emergingFromDim;
         if (hasNewBitmap) {
             currentSpotlightBitmap = item.bitmap;
             heroArt.setVisibility(View.VISIBLE);
             heroArtNext.setVisibility(View.VISIBLE);
             if (firstImage) {
+                ++backdropDimToken;
+                backdropLoadAlpha = 1f;
+                applyBackdropAlpha();
                 heroArtNextIsFront = false;
                 heroArt.setImageBitmap(item.bitmap);
                 heroArt.setTranslationZ(1f);
@@ -2441,18 +2784,41 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 adjustHeroY();
                 return;
             }
+            emergingFromDim = (backdropLoadAlpha < 0.85f);
             incoming = heroArtNextIsFront ? heroArt : heroArtNext;
             outgoing = heroArtNextIsFront ? heroArtNext : heroArt;
             heroArtNextIsFront = !heroArtNextIsFront;
 
-            incoming.setAlpha(0f);
-            incoming.setImageBitmap(item.bitmap);
-            incoming.setTranslationZ(1f);
-            outgoing.setTranslationZ(0f);
-            outgoing.setAlpha(1f);
+            if (emergingFromDim) {
+                // Swap directly to the target poster while dimmed so the previous poster never flashes back in,
+                // then smoothly bring the container brightness back up to 100%.
+                incoming.setImageBitmap(item.bitmap);
+                incoming.setTranslationZ(1f);
+                incoming.setAlpha(1f);
+                outgoing.setTranslationZ(0f);
+                outgoing.setAlpha(0f);
+                animateBackdropBrightness(1f, 520f);
+            } else {
+                ++backdropDimToken;
+                backdropLoadAlpha = 1f;
+                applyBackdropAlpha();
+                incoming.setAlpha(0f);
+                incoming.setImageBitmap(item.bitmap);
+                incoming.setTranslationZ(1f);
+                outgoing.setTranslationZ(0f);
+                outgoing.setAlpha(1f);
+            }
         } else {
             incoming = null;
             outgoing = null;
+            emergingFromDim = false;
+            if (item.bitmap == null && titleChanged) {
+                // Poster not yet in RAM: gently dim to near-black while loading so navigation feels responsive
+                animateBackdropBrightness(0.08f, 320f);
+            } else if (item.bitmap != null && backdropLoadAlpha < 0.99f) {
+                // User navigated back to an already-loaded poster: smoothly bring brightness back
+                animateBackdropBrightness(1f, 360f);
+            }
             if (!titleChanged) {
                 applySpotlightTexts(item);
                 setSpotlightTextAlpha(1f);
@@ -2466,6 +2832,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             applySpotlightTexts(item);
             setSpotlightTextAlpha(1f);
             adjustHeroY();
+            if (emergingFromDim) return;
         }
 
         // Driven directly by Choreographer frame timestamps so the crossfade always runs at 60fps
@@ -2486,21 +2853,23 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 float elapsedMs = (frameTimeNanos - startNs) / 1_000_000f;
 
                 if (animateText) {
-                    if (elapsedMs < 200f) {
-                        setSpotlightTextAlpha(Math.max(0f, 1f - (elapsedMs / 200f)));
+                    if (elapsedMs < 180f) {
+                        float outT = Math.min(1f, elapsedMs / 180f);
+                        setSpotlightTextMotion(1f - outT, -6f * outT);
                     } else {
                         if (!textSwapped) {
                             textSwapped = true;
                             applySpotlightTexts(item);
                             adjustHeroY();
                         }
-                        float inT = Math.min(1f, (elapsedMs - 200f) / 450f);
-                        setSpotlightTextAlpha(inT);
+                        float inT = Math.min(1f, (elapsedMs - 180f) / 360f);
+                        float easedIn = 1f - (1f - inT) * (1f - inT);
+                        setSpotlightTextMotion(easedIn, 10f * (1f - easedIn));
                     }
                 }
 
-                float imgT = Math.min(1f, elapsedMs / 1000f);
-                if (incoming != null) {
+                float imgT = emergingFromDim ? 1f : Math.min(1f, elapsedMs / 1000f);
+                if (incoming != null && !emergingFromDim) {
                     float eased = imgT * imgT * (3f - 2f * imgT);
                     incoming.setAlpha(eased);
                 }
@@ -2560,17 +2929,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         boolean rtl = getResources().getBoolean(R.bool.rtl_menu_bar);
         Paint paint = new Paint();
 
-        // 1. Dark Top Scrim (vinheta superior com transição suave e gradual para não cobrir a arte)
-        paint.setShader(new LinearGradient(0, 0, 0, h * 0.48f,
-                new int[]{0xD0060406, 0x90060406, 0x50060406, 0x20060406, 0x06060406, 0x00060406},
-                new float[]{0f, 0.20f, 0.45f, 0.70f, 0.88f, 1f},
+        // 1. Dark Top Scrim (protege relógio, data e clima mesmo sobre capas claras)
+        paint.setShader(new LinearGradient(0, 0, 0, h * 0.44f,
+                new int[]{0xE0060406, 0xA8060406, 0x5C060406, 0x24060406, 0x06060406, 0x00060406},
+                new float[]{0f, 0.22f, 0.46f, 0.70f, 0.88f, 1f},
                 Shader.TileMode.CLAMP));
-        canvas.drawRect(0, 0, w, h * 0.48f, paint);
+        canvas.drawRect(0, 0, w, h * 0.44f, paint);
 
-        // 2. Lateral suave para legibilidade dos títulos
+        // 2. Lateral mais rica atrás do Spotlight para legibilidade sobre fundos claros (ex.: Tetris)
         paint.setShader(new LinearGradient(rtl ? w : 0, 0, rtl ? 0 : w, 0,
-                new int[]{0x88060406, 0x38060406, 0x00060406},
-                new float[]{0f, 0.35f, 0.70f},
+                new int[]{0xBF060406, 0x66060406, 0x1A060406, 0x00060406},
+                new float[]{0f, 0.30f, 0.52f, 0.72f},
                 Shader.TileMode.CLAMP));
         canvas.drawRect(0, 0, w, h, paint);
 
@@ -2683,12 +3052,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             Canvas canvas = new Canvas(bmp);
             Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
-            // Brilho ambiente no topo acompanhando a cor do app selecionado (suave)
-            paint.setShader(new LinearGradient(0, 0, 0, h * 0.45f,
-                    new int[]{0x80FFFFFF, 0x44FFFFFF, 0x14FFFFFF, 0x00FFFFFF},
-                    new float[]{0f, 0.30f, 0.65f, 1f},
+            // Brilho ambiente contido no topo da tela acompanhando a cor do app selecionado (sem invadir o cartaz)
+            paint.setShader(new LinearGradient(0, 0, 0, h * 0.14f,
+                    new int[]{0x78FFFFFF, 0x38FFFFFF, 0x0DFFFFFF, 0x00FFFFFF},
+                    new float[]{0f, 0.35f, 0.72f, 1f},
                     Shader.TileMode.CLAMP));
-            canvas.drawRect(0, 0, w, h * 0.45f, paint);
+            canvas.drawRect(0, 0, w, h * 0.14f, paint);
 
             glow = new BitmapDrawable(getResources(), bmp);
             glow.setGravity(Gravity.FILL);

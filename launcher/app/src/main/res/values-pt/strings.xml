@@ -221,4 +221,14 @@
     <string name="idle_clock_30">30 minutos</string>
     <string name="idle_clock_60">60 minutos</string>
     <string name="idle_clock_off">Desligado</string>
+    <string name="spotlight_open_in">&#9654; Abrir em %1$s</string>
+    <string name="spotlight_open_prefix">&#9654; Abrir em</string>
+    <string name="spotlight_open">&#9654; Assistir agora</string>
+    <string name="label_spotlight_watch_next">Continuar assistindo</string>
+    <string name="label_spotlight_services">Serviços no Spotlight</string>
+    <string name="spotlight_services_title">Serviços no Spotlight</string>
+    <string name="spotlight_services_all">Todos (%1$d)</string>
+    <string name="spotlight_services_count">%1$d de %2$d</string>
+    <string name="spotlight_services_none">Nenhum</string>
+    <string name="spotlight_services_empty">Nenhum app de vídeo detectado</string>
 </resources>

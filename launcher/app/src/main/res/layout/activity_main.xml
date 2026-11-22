@@ -118,6 +118,15 @@
         android:visibility="gone"
         android:importantForAccessibility="no" />
 
+    <!-- Adaptive dim overlay when scrolling down into the app grid below the dock. -->
+    <View
+        android:id="@+id/gridDimOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#FF000000"
+        android:alpha="0"
+        android:importantForAccessibility="no" />
+
     <!-- Ambient glow in the colour of the focused dock app. -->
     <View
         android:id="@+id/ambient"
@@ -198,11 +207,72 @@
         <LinearLayout
             android:id="@+id/heroDotsRow"
             android:layout_width="wrap_content"
-            android:layout_height="18dp"
+            android:layout_height="34dp"
             android:layout_marginStart="4dp"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="10dp"
             android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:gravity="center_vertical"
+            android:clipChildren="false"
+            android:clipToPadding="false">
+
+            <LinearLayout
+                android:id="@+id/heroActionPill"
+                android:layout_width="206dp"
+                android:layout_height="34dp"
+                android:layout_marginEnd="14dp"
+                android:paddingStart="13dp"
+                android:paddingEnd="9dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/spotlight_action_pill_bg"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/heroActionPrefix"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/spotlight_open_prefix"
+                    android:textColor="#FF111111"
+                    android:textSize="13sp"
+                    android:fontFamily="@string/font_medium"
+                    android:singleLine="true" />
+
+                <FrameLayout
+                    android:id="@+id/heroActionBadgeBox"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="22dp"
+                    android:layout_marginStart="7dp"
+                    android:paddingStart="7dp"
+                    android:paddingEnd="7dp"
+                    android:clipChildren="true"
+                    android:clipToPadding="true">
+
+                    <TextView
+                        android:id="@+id/heroActionService"
+                        android:layout_width="wrap_content"
+                        android:layout_height="match_parent"
+                        android:layout_gravity="center_vertical|start"
+                        android:gravity="center_vertical"
+                        android:textColor="#FFFFFFFF"
+                        android:textSize="11sp"
+                        android:textAllCaps="true"
+                        android:fontFamily="@string/font_medium"
+                        android:letterSpacing="0.06"
+                        android:singleLine="true"
+                        android:scrollHorizontally="true" />
+                </FrameLayout>
+            </LinearLayout>
+
+            <ImageView
+                android:id="@+id/heroArrowLeft"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_marginEnd="6dp"
+                android:src="@drawable/ic_chevron_left"
+                android:scaleType="fitCenter"
+                android:importantForAccessibility="no"
+                android:visibility="gone" />
 
             <LinearLayout
                 android:id="@+id/heroDots"
@@ -212,17 +282,54 @@
                 android:gravity="center_vertical"
                 android:visibility="gone" />
 
-            <TextView
+            <ImageView
+                android:id="@+id/heroArrowRight"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_marginStart="6dp"
+                android:src="@drawable/ic_chevron_right"
+                android:scaleType="fitCenter"
+                android:importantForAccessibility="no"
+                android:visibility="gone" />
+
+            <LinearLayout
                 android:id="@+id/heroRemoveHint"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="14dp"
-                android:singleLine="true"
-                android:text="Aperte OK para abrir, mantenha pressionando para remover"
-                android:textColor="#55FFFFFF"
-                android:textSize="12.5sp"
-                android:fontFamily="@string/font_regular"
-                android:visibility="gone" />
+                android:layout_height="match_parent"
+                android:layout_marginStart="16dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Segure "
+                    android:textColor="#99FFFFFF"
+                    android:textSize="12.5sp"
+                    android:fontFamily="@string/font_regular" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="6dp"
+                    android:paddingEnd="6dp"
+                    android:paddingTop="1dp"
+                    android:paddingBottom="1dp"
+                    android:background="@drawable/bg_ok_keycap"
+                    android:text="OK"
+                    android:textColor="#FF111111"
+                    android:textSize="11sp"
+                    android:fontFamily="@string/font_medium" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text=" para remover"
+                    android:textColor="#99FFFFFF"
+                    android:textSize="12.5sp"
+                    android:fontFamily="@string/font_regular" />
+            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 

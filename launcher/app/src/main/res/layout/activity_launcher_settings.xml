@@ -199,6 +199,16 @@
                         </LinearLayout>
 
                         <LinearLayout style="@style/SettingsInlineRow">
+                            <TextView style="@style/SettingsInlineLabel" android:text="@string/label_spotlight_watch_next" />
+                            <TextView android:id="@+id/spotlightWatchNextChoice" style="@style/SettingsSinglePill" />
+                        </LinearLayout>
+
+                        <LinearLayout style="@style/SettingsInlineRow">
+                            <TextView style="@style/SettingsInlineLabel" android:text="@string/label_spotlight_services" />
+                            <TextView android:id="@+id/spotlightServicesChoice" style="@style/SettingsSinglePill" />
+                        </LinearLayout>
+
+                        <LinearLayout style="@style/SettingsInlineRow">
                             <TextView style="@style/SettingsInlineLabel" android:text="@string/tmdb_api_key_label" />
                             <TextView android:id="@+id/tmdbApiKeyChoice" style="@style/SettingsSinglePill" />
                         </LinearLayout>

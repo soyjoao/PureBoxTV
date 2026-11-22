@@ -56,6 +56,8 @@ final class Config {
     static final String WEATHER_LAT_KEY = "weather_lat";
     static final String WEATHER_LON_KEY = "weather_lon";
     static final String SPOTLIGHT_ENABLED_KEY = "spotlight_enabled";
+    static final String SPOTLIGHT_SHOW_WATCH_NEXT_KEY = "spotlight_show_watch_next";
+    static final String SPOTLIGHT_DISABLED_SERVICES_KEY = "spotlight_disabled_services";
     static final String AMBIENT_GLOW_KEY = "ambient_glow";
     static final String APP_GLOW_KEY = "app_glow";
     static final String LIBRARY_BUTTON_KEY = "library_button";

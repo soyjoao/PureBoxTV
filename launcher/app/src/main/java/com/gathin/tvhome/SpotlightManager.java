@@ -130,6 +130,7 @@ public final class SpotlightManager {
     private final List<Item> cachedTrendingPool = new ArrayList<>();
     private long lastTrendingFetchMs = 0L;
     private String lastUsedApiKey = "";
+    private String lastFilterSignature = "";
     private String lastLocalWatchSignature = "";
     private String tvdbBearerToken = null;
     private int backdropCycle = 0;
@@ -242,6 +243,7 @@ public final class SpotlightManager {
         int size = snapshot.size();
         if (size == 0) return;
         int center = ((centerIndex % size) + size) % size;
+        if (center != this.activeIndex) return;
         int next = (center + 1) % size;
         int prev = (center - 1 + size) % size;
         int[] window = size == 1 ? new int[]{center}
@@ -250,6 +252,7 @@ public final class SpotlightManager {
 
         final int cycle = this.backdropCycle;
         for (int idx : window) {
+            if (center != this.activeIndex) return;
             Item item = snapshot.get(idx);
             String targetUrl = item.getBackdropForCycle(cycle);
             if (targetUrl == null || targetUrl.isEmpty()) continue;
@@ -328,9 +331,9 @@ public final class SpotlightManager {
             Set<String> dismissed = getDismissedSet();
 
             // 1. Load initial fallback/cached items so UI displays immediately
-            List<Item> cached = filterDismissed(loadFromDiskCache(), dismissed);
+            List<Item> cached = filterAllowed(loadFromDiskCache(), dismissed);
             if (cached.isEmpty()) {
-                cached = filterDismissed(getDefaultItems(), dismissed);
+                cached = filterAllowed(getDefaultItems(), dismissed);
             }
             setCandidatesAndPublish(cached);
             downloadBackdrops();
@@ -364,7 +367,9 @@ public final class SpotlightManager {
                 fetchWatchNextPrograms(continueItems, dismissed);
                 fetchPreviewChannelPrograms(continueItems, appChannelItems, dismissed);
 
+                String filterSig = currentFilterSignature();
                 StringBuilder sigBuilder = new StringBuilder();
+                sigBuilder.append(filterSig).append('|');
                 for (Item it : continueItems) {
                     sigBuilder.append(it.id).append(':').append(it.remainingMin).append(';');
                 }
@@ -375,6 +380,7 @@ public final class SpotlightManager {
                 long now = android.os.SystemClock.elapsedRealtime();
                 boolean trendingValid = !cachedTrendingPool.isEmpty()
                         && apiKey().equals(lastUsedApiKey)
+                        && filterSig.equals(lastFilterSignature)
                         && (now - lastTrendingFetchMs) < TRENDING_TTL_MS;
 
                 boolean hasActive;
@@ -1035,7 +1041,9 @@ public final class SpotlightManager {
 
         // A. Fetch Continue Watching from Android TV Watch Next (Nuvio, Stremio, Prime, etc.)
         List<Item> continueItems = new ArrayList<>();
-        fetchWatchNextPrograms(continueItems, dismissed);
+        if (isWatchNextEnabled(context)) {
+            fetchWatchNextPrograms(continueItems, dismissed);
+        }
 
         // B. Fetch Continue Watching & App Channel Programs from Android TV Preview Channels
         List<Item> appChannelItems = new ArrayList<>();
@@ -1044,6 +1052,7 @@ public final class SpotlightManager {
         // Enrich Continue Watching items (up to 6) with TMDB pt-BR synopsis & 16:9 backdrop if needed
         for (Item cw : continueItems) {
             if (result.size() >= 6) break;
+            if (!isWatchNextEnabled(context) || !isServiceEnabled(context, cw.service)) continue;
             if (isRawSlugOrInvalidTitle(cw.title)) continue;
             String nt = norm(cw.title);
             if (nt.isEmpty() || !seenTitles.add(nt)) continue;
@@ -1055,6 +1064,7 @@ public final class SpotlightManager {
         // Add up to 5 app channel items (like Prime Video's channel) enriched with pt-BR if needed
         for (Item appItem : appChannelItems) {
             if (result.size() >= 10) break;
+            if (!isServiceEnabled(context, appItem.service)) continue;
             if (isRawSlugOrInvalidTitle(appItem.title)) continue;
             String nt = norm(appItem.title);
             if (nt.isEmpty() || !seenTitles.add(nt)) continue;
@@ -1065,40 +1075,45 @@ public final class SpotlightManager {
             result.add(appItem);
         }
 
-        // Query installed streaming services once per candidate refresh instead of per item
+        // Query installed & enabled streaming services once per candidate refresh instead of per item
         List<ProviderSpec> installedServices = queryInstalledStreamingServices();
+        String filterSig = currentFilterSignature();
 
         // C. Fetch Provider-Verified Movies & Series from TMDB in pt-BR (watch_region=BR)
         String currentApiKey = apiKey();
-        if (currentApiKey == null || currentApiKey.isEmpty()) {
+        if (currentApiKey == null || currentApiKey.isEmpty() || installedServices.isEmpty()) {
             cachedTrendingPool.clear();
             lastUsedApiKey = "";
+            lastFilterSignature = filterSig;
         } else {
             long now = android.os.SystemClock.elapsedRealtime();
             boolean useTrendingCache = !cachedTrendingPool.isEmpty()
                     && currentApiKey.equals(lastUsedApiKey)
+                    && filterSig.equals(lastFilterSignature)
                     && (now - lastTrendingFetchMs) < TRENDING_TTL_MS;
 
             if (!useTrendingCache) {
                 List<Item> fetchedTrending = fetchVerifiedTmdbCatalog(currentApiKey, installedServices);
+                cachedTrendingPool.clear();
                 if (!fetchedTrending.isEmpty()) {
-                    cachedTrendingPool.clear();
                     cachedTrendingPool.addAll(fetchedTrending);
-                    lastTrendingFetchMs = now;
-                    lastUsedApiKey = currentApiKey;
                 }
+                lastTrendingFetchMs = now;
+                lastUsedApiKey = currentApiKey;
+                lastFilterSignature = filterSig;
             }
         }
 
         for (Item t : cachedTrendingPool) {
             if (result.size() >= MAX_CANDIDATES) break;
+            if (!isServiceEnabled(context, t.service)) continue;
             if (isDismissed(dismissed, t.id, t.title)) continue;
             String nt = norm(t.title);
             if (nt.isEmpty() || !seenTitles.add(nt)) continue;
             result.add(t);
         }
 
-        if (result.isEmpty()) return filterDismissed(getDefaultItems(), dismissed);
+        if (result.isEmpty()) return filterAllowed(getDefaultItems(), dismissed);
         return result;
     }
 
@@ -1275,7 +1290,7 @@ public final class SpotlightManager {
                 if (watchNextType == 3) continue; // Skip pure watchlist without progress
 
                 String pkg = getCursorStr(c, "package_name");
-                if (pkg.isEmpty() || pkg.equals(context.getPackageName()) || !isInstalled(pm, pkg)) continue;
+                if (pkg.isEmpty() || pkg.equals(context.getPackageName()) || isAudioOnlyPackage(pkg) || !isInstalled(pm, pkg)) continue;
 
                 String title = getCursorStr(c, "title");
                 String art = getCursorArt(c);
@@ -1300,6 +1315,7 @@ public final class SpotlightManager {
                 }
 
                 String serviceBadge = serviceNameForPackage(pkg);
+                if (!isServiceEnabled(context, serviceBadge)) continue;
                 String servicePretty = prettyServiceName(pkg);
                 String remStr = formatRemainingPtBr(remainingMin);
                 String meta = !remStr.isEmpty()
@@ -1346,7 +1362,7 @@ public final class SpotlightManager {
                     String type = getCursorStr(chCursor, "type");
                     if (!"TYPE_PREVIEW".equals(type)) continue;
                     String pkg = getCursorStr(chCursor, "package_name");
-                    if (pkg.isEmpty() || pkg.equals(context.getPackageName()) || !isInstalled(pm, pkg)) continue;
+                    if (pkg.isEmpty() || pkg.equals(context.getPackageName()) || isAudioOnlyPackage(pkg) || !isInstalled(pm, pkg)) continue;
                     long chId = getCursorLong(chCursor, "_id", -1L);
                     if (chId < 0) continue;
                     String displayName = getCursorStr(chCursor, "display_name");
@@ -1391,7 +1407,9 @@ public final class SpotlightManager {
                 }
 
                 boolean isResume = resumeChannelIds.contains(chId) || hasProgress;
+                if (isResume && !isWatchNextEnabled(context)) continue;
                 String serviceBadge = serviceNameForPackage(pkg);
+                if (!isServiceEnabled(context, serviceBadge)) continue;
                 String servicePretty = prettyServiceName(pkg);
                 String overview = getCursorEpisodeOrDesc(progCursor);
                 String intentUri = getCursorStr(progCursor, "intent_uri");
@@ -1600,8 +1618,149 @@ public final class SpotlightManager {
         }
     }
 
+    /** Represents an installed video/streaming app detected for Spotlight filtering in Settings. */
+    public static final class ServiceOption {
+        public final String key;
+        public final String label;
+
+        public ServiceOption(String key, String label) {
+            this.key = key;
+            this.label = label;
+        }
+    }
+
+    public static String normalizeServiceKey(String service) {
+        if (service == null) return "";
+        String norm = service.trim().toUpperCase(Locale.ROOT);
+        if ("MAX".equals(norm)) return "HBO MAX";
+        return norm;
+    }
+
+    public static boolean isWatchNextEnabled(Context context) {
+        if (context == null) return true;
+        return context.getSharedPreferences(Config.SETTINGS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(Config.SPOTLIGHT_SHOW_WATCH_NEXT_KEY, true);
+    }
+
+    public static Set<String> getDisabledServices(Context context) {
+        Set<String> out = new HashSet<>();
+        if (context == null) return out;
+        Set<String> raw = context.getSharedPreferences(Config.SETTINGS_NAME, Context.MODE_PRIVATE)
+                .getStringSet(Config.SPOTLIGHT_DISABLED_SERVICES_KEY, null);
+        if (raw != null) {
+            for (String s : raw) {
+                String k = normalizeServiceKey(s);
+                if (!k.isEmpty()) out.add(k);
+            }
+        }
+        return out;
+    }
+
+    public static boolean isServiceEnabled(Context context, String service) {
+        String key = normalizeServiceKey(service);
+        if (key.isEmpty()) return true;
+        return !getDisabledServices(context).contains(key);
+    }
+
+    private String currentFilterSignature() {
+        List<String> disabled = new ArrayList<>(getDisabledServices(context));
+        Collections.sort(disabled);
+        StringBuilder sb = new StringBuilder();
+        sb.append(isWatchNextEnabled(context) ? "wn1" : "wn0").append(':');
+        for (String d : disabled) sb.append(d).append(',');
+        return sb.toString();
+    }
+
+    private List<Item> filterAllowed(List<Item> input, Set<String> dismissed) {
+        boolean allowWatchNext = isWatchNextEnabled(context);
+        Set<String> disabled = getDisabledServices(context);
+        List<Item> out = new ArrayList<>();
+        for (Item it : input) {
+            if (isDismissed(dismissed, it.id, it.title)) continue;
+            if (it.isContinueWatching && !allowWatchNext) continue;
+            if (disabled.contains(normalizeServiceKey(it.service))) continue;
+            out.add(it);
+        }
+        return out;
+    }
+
     /**
-     * Returns streaming apps installed on the TVBox with their official TMDB Brazil provider IDs.
+     * Automatically detects installed video/streaming apps on the TVBox (known streaming apps +
+     * any installed app publishing Android TV Watch Next or Preview Channels).
+     */
+    public static List<ServiceOption> detectInstalledVideoServices(Context context) {
+        List<ServiceOption> found = new ArrayList<>();
+        Set<String> seenKeys = new HashSet<>();
+        PackageManager pm = context.getPackageManager();
+
+        String[][] known = new String[][]{
+                {"NUVIO", "Nuvio", "com.nuvio.tv"},
+                {"STREMIO", "Stremio", "com.stremio.one"},
+                {"NETFLIX", "Netflix", "com.netflix.mediaclient", "com.netflix.ninja"},
+                {"DISNEY+", "Disney+", "com.disney.disneyplus"},
+                {"HBO MAX", "HBO Max", "com.wbd.stream", "com.hbo.hbonow"},
+                {"PRIME VIDEO", "Prime Video", "com.amazon.amazonvideo.livingroom", "com.amazon.avod.thirdpartyclient"},
+                {"APPLE TV+", "Apple TV+", "com.apple.atve.androidtv.appletv"},
+                {"PARAMOUNT+", "Paramount+", "com.cbs.ott"},
+                {"GLOBOPLAY", "Globoplay", "com.globo.globotv"},
+                {"CRUNCHYROLL", "Crunchyroll", "com.crunchyroll.crunchyroid"},
+                {"JELLYFIN", "Jellyfin", "org.jellyfin.androidtv"},
+                {"PLEX", "Plex", "com.plexapp.android"},
+                {"KODI", "Kodi", "org.xbmc.kodi"},
+                {"YOUTUBE", "YouTube", "com.google.android.youtube.tv", "com.liskovsoft.smarttubetv.beta", "com.liskovsoft.smarttubetv"}
+        };
+        for (String[] entry : known) {
+            boolean installed = false;
+            for (int i = 2; i < entry.length; i++) {
+                if (isInstalled(pm, entry[i])) {
+                    installed = true;
+                    break;
+                }
+            }
+            if (installed && seenKeys.add(entry[0])) {
+                found.add(new ServiceOption(entry[0], entry[1]));
+            }
+        }
+
+        // Also detect any other installed app publishing Android TV Preview Channels or Watch Next
+        String[] uris = new String[]{
+                "content://android.media.tv/channel",
+                "content://android.media.tv/watch_next_program"
+        };
+        for (String uriStr : uris) {
+            Cursor c = null;
+            try {
+                c = context.getContentResolver().query(Uri.parse(uriStr), new String[]{"package_name"}, null, null, null);
+                if (c == null) continue;
+                while (c.moveToNext()) {
+                    String pkg = getCursorStr(c, "package_name");
+                    if (pkg.isEmpty() || pkg.equals(context.getPackageName()) || isAudioOnlyPackage(pkg) || !isInstalled(pm, pkg)) continue;
+                    String key = serviceNameForPackage(pkg);
+                    String label = prettyServiceName(pkg);
+                    if ("TV".equals(key)) {
+                        try {
+                            CharSequence appLabel = pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0));
+                            if (appLabel != null && appLabel.length() > 0) {
+                                label = appLabel.toString().trim();
+                                key = normalizeServiceKey(label);
+                            }
+                        } catch (Exception ignored) {
+                        }
+                    }
+                    if (!key.isEmpty() && !"TV".equals(key) && seenKeys.add(key)) {
+                        found.add(new ServiceOption(key, label));
+                    }
+                }
+            } catch (Exception ignored) {
+            } finally {
+                if (c != null) try { c.close(); } catch (Exception ignored) {}
+            }
+        }
+        return found;
+    }
+
+    /**
+     * Returns streaming apps installed & enabled on the TVBox with their official TMDB Brazil provider IDs.
      * Note: Jellyfin is a personal media server and is intentionally excluded here so TMDB catalog
      * items are never falsely labeled as available on Jellyfin; Jellyfin items come exclusively
      * from Jellyfin's own Android TV Watch Next / Preview Channels.
@@ -1609,17 +1768,54 @@ public final class SpotlightManager {
     private List<ProviderSpec> queryInstalledStreamingServices() {
         PackageManager pm = context.getPackageManager();
         List<ProviderSpec> available = new ArrayList<>();
-        if (isInstalled(pm, "com.netflix.mediaclient")) available.add(new ProviderSpec("NETFLIX", "com.netflix.mediaclient", 8));
-        else if (isInstalled(pm, "com.netflix.ninja")) available.add(new ProviderSpec("NETFLIX", "com.netflix.ninja", 8));
-
-        if (isInstalled(pm, "com.amazon.amazonvideo.livingroom")) available.add(new ProviderSpec("PRIME VIDEO", "com.amazon.amazonvideo.livingroom", 119));
-        else if (isInstalled(pm, "com.amazon.avod.thirdpartyclient")) available.add(new ProviderSpec("PRIME VIDEO", "com.amazon.avod.thirdpartyclient", 119));
-
-        if (isInstalled(pm, "com.wbd.stream")) available.add(new ProviderSpec("MAX", "com.wbd.stream", 1899));
-        if (isInstalled(pm, "com.disney.disneyplus")) available.add(new ProviderSpec("DISNEY+", "com.disney.disneyplus", 337));
-        if (isInstalled(pm, "com.nuvio.tv")) available.add(new ProviderSpec("NUVIO", "com.nuvio.tv", 0));
-        if (isInstalled(pm, "com.stremio.one")) available.add(new ProviderSpec("STREMIO", "com.stremio.one", 0));
+        if (isServiceEnabled(context, "NETFLIX")) {
+            if (isInstalled(pm, "com.netflix.mediaclient")) available.add(new ProviderSpec("NETFLIX", "com.netflix.mediaclient", 8));
+            else if (isInstalled(pm, "com.netflix.ninja")) available.add(new ProviderSpec("NETFLIX", "com.netflix.ninja", 8));
+        }
+        if (isServiceEnabled(context, "PRIME VIDEO")) {
+            if (isInstalled(pm, "com.amazon.amazonvideo.livingroom")) available.add(new ProviderSpec("PRIME VIDEO", "com.amazon.amazonvideo.livingroom", 119));
+            else if (isInstalled(pm, "com.amazon.avod.thirdpartyclient")) available.add(new ProviderSpec("PRIME VIDEO", "com.amazon.avod.thirdpartyclient", 119));
+        }
+        if (isServiceEnabled(context, "HBO MAX")) {
+            if (isInstalled(pm, "com.wbd.stream")) available.add(new ProviderSpec("HBO MAX", "com.wbd.stream", 1899));
+            else if (isInstalled(pm, "com.hbo.hbonow")) available.add(new ProviderSpec("HBO MAX", "com.hbo.hbonow", 1899));
+        }
+        if (isServiceEnabled(context, "DISNEY+") && isInstalled(pm, "com.disney.disneyplus")) {
+            available.add(new ProviderSpec("DISNEY+", "com.disney.disneyplus", 337));
+        }
+        if (isServiceEnabled(context, "APPLE TV+") && isInstalled(pm, "com.apple.atve.androidtv.appletv")) {
+            available.add(new ProviderSpec("APPLE TV+", "com.apple.atve.androidtv.appletv", 350));
+        }
+        if (isServiceEnabled(context, "PARAMOUNT+") && isInstalled(pm, "com.cbs.ott")) {
+            available.add(new ProviderSpec("PARAMOUNT+", "com.cbs.ott", 531));
+        }
+        if (isServiceEnabled(context, "GLOBOPLAY") && isInstalled(pm, "com.globo.globotv")) {
+            available.add(new ProviderSpec("GLOBOPLAY", "com.globo.globotv", 307));
+        }
+        if (isServiceEnabled(context, "CRUNCHYROLL") && isInstalled(pm, "com.crunchyroll.crunchyroid")) {
+            available.add(new ProviderSpec("CRUNCHYROLL", "com.crunchyroll.crunchyroid", 283));
+        }
+        if (isServiceEnabled(context, "NUVIO") && isInstalled(pm, "com.nuvio.tv")) {
+            available.add(new ProviderSpec("NUVIO", "com.nuvio.tv", 0));
+        }
+        if (isServiceEnabled(context, "STREMIO") && isInstalled(pm, "com.stremio.one")) {
+            available.add(new ProviderSpec("STREMIO", "com.stremio.one", 0));
+        }
         return available;
+    }
+
+    private static boolean isAudioOnlyPackage(String pkg) {
+        if (pkg == null) return false;
+        String p = pkg.toLowerCase(Locale.ROOT);
+        return p.contains("spotify")
+                || p.contains("music")
+                || p.contains("deezer")
+                || p.contains("tidal")
+                || p.contains("pandora")
+                || p.contains("soundcloud")
+                || p.contains("tunein")
+                || p.contains("audible")
+                || p.contains("iheart");
     }
 
     private static boolean isInstalled(PackageManager pm, String pkg) {
@@ -1640,7 +1836,14 @@ public final class SpotlightManager {
         if (p.contains("stremio")) return "STREMIO";
         if (p.contains("jellyfin")) return "JELLYFIN";
         if (p.contains("disney")) return "DISNEY+";
-        if (p.contains("wbd") || p.contains("max") || p.contains("hbo")) return "MAX";
+        if (p.contains("wbd") || p.contains("max") || p.contains("hbo")) return "HBO MAX";
+        if (p.contains("appletv") || p.contains("atve")) return "APPLE TV+";
+        if (p.contains("cbs.ott") || p.contains("paramount")) return "PARAMOUNT+";
+        if (p.contains("globo")) return "GLOBOPLAY";
+        if (p.contains("crunchyroll")) return "CRUNCHYROLL";
+        if (p.contains("plex")) return "PLEX";
+        if (p.contains("kodi")) return "KODI";
+        if (p.contains("youtube") || p.contains("smarttube")) return "YOUTUBE";
         return "TV";
     }
 
@@ -1653,26 +1856,48 @@ public final class SpotlightManager {
         if (p.contains("stremio")) return "Stremio";
         if (p.contains("jellyfin")) return "Jellyfin";
         if (p.contains("disney")) return "Disney+";
-        if (p.contains("wbd") || p.contains("max") || p.contains("hbo")) return "Max";
+        if (p.contains("wbd") || p.contains("max") || p.contains("hbo")) return "HBO Max";
+        if (p.contains("appletv") || p.contains("atve")) return "Apple TV+";
+        if (p.contains("cbs.ott") || p.contains("paramount")) return "Paramount+";
+        if (p.contains("globo")) return "Globoplay";
+        if (p.contains("crunchyroll")) return "Crunchyroll";
+        if (p.contains("plex")) return "Plex";
+        if (p.contains("kodi")) return "Kodi";
+        if (p.contains("youtube") || p.contains("smarttube")) return "YouTube";
         return "TV";
     }
 
     private static int badgeColorForService(String service) {
-        if ("NETFLIX".equals(service)) return 0xFFE50914;
-        if ("PRIME VIDEO".equals(service)) return 0xFF0082DC;
-        if ("NUVIO".equals(service)) return 0xFF6E28E6;
-        if ("STREMIO".equals(service)) return 0xFF5E35B1;
-        if ("DISNEY+".equals(service)) return 0xFF113CCF;
-        if ("MAX".equals(service)) return 0xFF002BE7;
+        String s = normalizeServiceKey(service);
+        if ("NETFLIX".equals(s)) return 0xFFE50914;
+        if ("PRIME VIDEO".equals(s)) return 0xFF0082DC;
+        if ("NUVIO".equals(s)) return 0xFF6E28E6;
+        if ("STREMIO".equals(s)) return 0xFF5E35B1;
+        if ("DISNEY+".equals(s)) return 0xFF113CCF;
+        if ("HBO MAX".equals(s)) return 0xFF002BE7;
+        if ("APPLE TV+".equals(s)) return 0xFF2C2C2E;
+        if ("PARAMOUNT+".equals(s)) return 0xFF0064FF;
+        if ("GLOBOPLAY".equals(s)) return 0xFFFB0234;
+        if ("CRUNCHYROLL".equals(s)) return 0xFFF47521;
+        if ("PLEX".equals(s)) return 0xFFE5A00D;
+        if ("YOUTUBE".equals(s)) return 0xFFFF0000;
         return 0xFF37474F;
     }
 
     private static String packageForService(String service) {
-        if ("NETFLIX".equals(service)) return "com.netflix.mediaclient";
-        if ("PRIME VIDEO".equals(service)) return "com.amazon.amazonvideo.livingroom";
-        if ("NUVIO".equals(service)) return "com.nuvio.tv";
-        if ("DISNEY+".equals(service)) return "com.disney.disneyplus";
-        if ("MAX".equals(service)) return "com.wbd.stream";
+        String s = normalizeServiceKey(service);
+        if ("NETFLIX".equals(s)) return "com.netflix.mediaclient";
+        if ("PRIME VIDEO".equals(s)) return "com.amazon.amazonvideo.livingroom";
+        if ("NUVIO".equals(s)) return "com.nuvio.tv";
+        if ("STREMIO".equals(s)) return "com.stremio.one";
+        if ("DISNEY+".equals(s)) return "com.disney.disneyplus";
+        if ("HBO MAX".equals(s)) return "com.wbd.stream";
+        if ("APPLE TV+".equals(s)) return "com.apple.atve.androidtv.appletv";
+        if ("PARAMOUNT+".equals(s)) return "com.cbs.ott";
+        if ("GLOBOPLAY".equals(s)) return "com.globo.globotv";
+        if ("CRUNCHYROLL".equals(s)) return "com.crunchyroll.crunchyroid";
+        if ("JELLYFIN".equals(s)) return "org.jellyfin.androidtv";
+        if ("PLEX".equals(s)) return "com.plexapp.android";
         return null;
     }
 
@@ -1696,7 +1921,7 @@ public final class SpotlightManager {
         defaults.add(new Item("def_6", "Godzilla Minus One", "NETFLIX", 0xFFE50914, "2023 • Filme • ⭐ 8,0",
                 "No Japão pós-guerra devastado, surge um novo terror gigantesco que força a população sobrevivente a se unir em uma luta desesperada pela própria existência.",
                 "https://image.tmdb.org/t/p/w1280/oqrYIDH4tvfEzPe1yqT4jzmAWHQ.jpg", "com.netflix.mediaclient", "Godzilla Minus One", "", false, 0));
-        defaults.add(new Item("def_7", "A Casa do Dragão", "MAX", 0xFF002BE7, "2022 • Série • ⭐ 8,4",
+        defaults.add(new Item("def_7", "A Casa do Dragão", "HBO MAX", 0xFF002BE7, "2022 • Série • ⭐ 8,4",
                 "A história da Casa Targaryen, 200 anos antes dos eventos de Game of Thrones, marcada pela guerra civil conhecida como a Dança dos Dragões.",
                 "https://image.tmdb.org/t/p/w1280/etj8E2o0Bud0HkONVQPjyCkIvpv.jpg", "com.wbd.stream", "A Casa do Dragão", "", false, 0));
         defaults.add(new Item("def_8", "Resident Evil", "NETFLIX", 0xFFE50914, "2022 • Série • ⭐ 7,5",
@@ -1705,7 +1930,7 @@ public final class SpotlightManager {
         defaults.add(new Item("def_9", "The Boys", "PRIME VIDEO", 0xFF0082DC, "2019 • Série • ⭐ 8,5",
                 "Um grupo de vigilantes se propõe a derrubar super-heróis corruptos que abusam de seus superpoderes em vez de usá-los para o bem.",
                 "https://image.tmdb.org/t/p/w1280/7cqKGQMnNabzOpi7qaIgZvQ7NGV.jpg", "com.amazon.amazonvideo.livingroom", "The Boys", "", false, 0));
-        defaults.add(new Item("def_10", "Pinguim", "MAX", 0xFF002BE7, "2024 • Série • ⭐ 8,5",
+        defaults.add(new Item("def_10", "Pinguim", "HBO MAX", 0xFF002BE7, "2024 • Série • ⭐ 8,5",
                 "Após os eventos em Gotham, Oswald Cobblepot inicia sua ascensão implacável pelo submundo do crime da cidade.",
                 "https://image.tmdb.org/t/p/w1280/9faGSFi5jam6pDWGNd0p8JcJgXQ.jpg", "com.wbd.stream", "Pinguim", "", false, 0));
         defaults.add(new Item("def_11", "Oppenheimer", "PRIME VIDEO", 0xFF0082DC, "2023 • Filme • ⭐ 8,1",
@@ -1714,7 +1939,7 @@ public final class SpotlightManager {
         defaults.add(new Item("def_12", "Ruptura", "NUVIO", 0xFF6E28E6, "2022 • Série • ⭐ 8,4",
                 "Mark lidera uma equipe de funcionários de escritório cujas memórias foram cirurgicamente divididas entre a vida no trabalho e a vida pessoal.",
                 "https://image.tmdb.org/t/p/w1280/ixgFmf1X59PUZam2qbAfskx2gQr.jpg", "com.nuvio.tv", "Ruptura", "", false, 0));
-        defaults.add(new Item("def_13", "The Last of Us", "MAX", 0xFF002BE7, "2023 • Série • ⭐ 8,6",
+        defaults.add(new Item("def_13", "The Last of Us", "HBO MAX", 0xFF002BE7, "2023 • Série • ⭐ 8,6",
                 "Vinte anos após a destruição da civilização moderna, Joel é contratado para tirar Ellie de uma zona de quarentena opressiva.",
                 "https://image.tmdb.org/t/p/w1280/uDgy6hyPd82kOHh6I95FLtLnj6p.jpg", "com.wbd.stream", "The Last of Us", "", false, 0));
         defaults.add(new Item("def_14", "O Problema dos 3 Corpos", "NETFLIX", 0xFFE50914, "2024 • Série • ⭐ 7,5",
@@ -1771,10 +1996,11 @@ public final class SpotlightManager {
             JSONArray arr = new JSONArray(new String(bytes, 0, read, StandardCharsets.UTF_8));
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject obj = arr.getJSONObject(i);
+                String cachedService = normalizeServiceKey(obj.optString("service"));
                 Item item = new Item(
                         obj.optString("id"),
                         obj.optString("title"),
-                        obj.optString("service"),
+                        cachedService,
                         obj.optInt("badgeColor"),
                         obj.optString("meta"),
                         obj.optString("overview", ""),

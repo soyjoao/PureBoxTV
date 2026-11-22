@@ -236,7 +236,7 @@ final class WallpaperPlayer {
         }
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END);
-        params.topMargin = Math.round(110 * dp) - pad;
+        params.topMargin = Math.round(137 * dp) - pad;
         params.setMarginEnd(Math.round(62 * dp) - pad);
         root.addView(text, params);
         return text;

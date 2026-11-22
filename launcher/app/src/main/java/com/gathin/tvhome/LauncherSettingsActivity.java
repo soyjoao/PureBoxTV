@@ -41,6 +41,8 @@ public final class LauncherSettingsActivity extends Activity {
     private final TextView[] idleClockChoices = new TextView[IDLE_CLOCK_MINUTES.length];
     private TextView wallpaperChoice;
     private TextView spotlightEnabledChoice;
+    private TextView spotlightWatchNextChoice;
+    private TextView spotlightServicesChoice;
     private TextView animationsChoice;
     private TextView advancedChoice;
     private TextView tmdbApiKeyChoice;
@@ -74,6 +76,7 @@ public final class LauncherSettingsActivity extends Activity {
             R.string.settings_cat_general
     };
     private int activeCategory = 0;
+    private View focusedSettingsRow;
     private int columns;
     private int rowsBelowDock;
     private int dockOpacity;
@@ -90,6 +93,8 @@ public final class LauncherSettingsActivity extends Activity {
     private boolean showWeather;
     private String weatherCity;
     private boolean spotlightEnabled;
+    private boolean spotlightWatchNext;
+    private List<SpotlightManager.ServiceOption> detectedVideoServices = new ArrayList<>();
     private boolean ambientGlow;
     private boolean appGlow;
     private boolean libraryButton;
@@ -138,6 +143,8 @@ public final class LauncherSettingsActivity extends Activity {
         showWeather = config.showWeather;
         weatherCity = config.weatherCity;
         spotlightEnabled = config.spotlightEnabled;
+        spotlightWatchNext = SpotlightManager.isWatchNextEnabled(this);
+        detectedVideoServices = SpotlightManager.detectInstalledVideoServices(this);
         ambientGlow = config.ambientGlow;
         appGlow = config.appGlow;
         libraryButton = config.libraryButton;
@@ -224,6 +231,15 @@ public final class LauncherSettingsActivity extends Activity {
             changed();
             refresh();
         });
+        spotlightWatchNextChoice = findViewById(R.id.spotlightWatchNextChoice);
+        spotlightWatchNextChoice.setOnClickListener(v -> {
+            spotlightWatchNext = !spotlightWatchNext;
+            choices.edit().putBoolean(Config.SPOTLIGHT_SHOW_WATCH_NEXT_KEY, spotlightWatchNext).apply();
+            changed();
+            refresh();
+        });
+        spotlightServicesChoice = findViewById(R.id.spotlightServicesChoice);
+        spotlightServicesChoice.setOnClickListener(v -> showSpotlightServicesDialog());
         animationsChoice = findViewById(R.id.animationsChoice);
         animationsChoice.setOnClickListener(v -> {
             animations = !animations;
@@ -238,7 +254,7 @@ public final class LauncherSettingsActivity extends Activity {
             if (advancedEffects) {
                 setAdvanced(false);
             } else {
-                new AlertDialog.Builder(this)
+                new AlertDialog.Builder(this, R.style.Theme_PureBoxDialog)
                         .setTitle(R.string.advanced_effects)
                         .setMessage(R.string.advanced_effects_warning)
                         .setPositiveButton(R.string.enable, (dialog, which) -> setAdvanced(true))
@@ -427,11 +443,51 @@ public final class LauncherSettingsActivity extends Activity {
                 selectCategory(index);
                 focusFirstInPanel(categoryPanels[index]);
             });
+            attachRowFocusHighlight(categoryPanels[i]);
         }
 
         refresh();
         selectCategory(0);
         navItems[0].requestFocus();
+    }
+
+    /** Highlights the whole inline row and subtly scales the focused pill so the remote cursor is unmistakable. */
+    private void attachRowFocusHighlight(View panel) {
+        if (!(panel instanceof android.view.ViewGroup)) return;
+        android.view.ViewGroup group = (android.view.ViewGroup) panel;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View row = group.getChildAt(i);
+            if (!(row instanceof android.view.ViewGroup)) continue;
+            bindFocusInsideRow(row, (android.view.ViewGroup) row);
+        }
+    }
+
+    private void bindFocusInsideRow(final View row, android.view.ViewGroup container) {
+        for (int i = 0; i < container.getChildCount(); i++) {
+            View child = container.getChildAt(i);
+            if (child.isFocusable()) {
+                child.setOnFocusChangeListener((v, hasFocus) -> {
+                    v.setScaleX(hasFocus ? 1.03f : 1.0f);
+                    v.setScaleY(hasFocus ? 1.03f : 1.0f);
+                    if (hasFocus) {
+                        if (focusedSettingsRow != null && focusedSettingsRow != row) {
+                            focusedSettingsRow.setBackground(null);
+                        }
+                        focusedSettingsRow = row;
+                        row.setBackgroundResource(R.drawable.settings_row_focused_bg);
+                    } else {
+                        row.post(() -> {
+                            if (!row.hasFocus()) {
+                                row.setBackground(null);
+                                if (focusedSettingsRow == row) focusedSettingsRow = null;
+                            }
+                        });
+                    }
+                });
+            } else if (child instanceof android.view.ViewGroup) {
+                bindFocusInsideRow(row, (android.view.ViewGroup) child);
+            }
+        }
     }
 
     private void selectCategory(int index) {
@@ -486,7 +542,7 @@ public final class LauncherSettingsActivity extends Activity {
         String current = choices.getString(Config.WALLPAPER_CHOICE_KEY, null);
         int checked = "none".equals(current) ? images.size()
                 : indexOf(images, current);
-        new AlertDialog.Builder(this)
+        new AlertDialog.Builder(this, R.style.Theme_PureBoxDialog)
                 .setTitle(R.string.wallpaper_label)
                 .setSingleChoiceItems(labels, checked, (dialog, which) -> {
                     dialog.dismiss();
@@ -535,7 +591,7 @@ public final class LauncherSettingsActivity extends Activity {
             labels[i + 1] = apps.get(i)[0];
             if (apps.get(i)[1].equals(current)) checked = i + 1;
         }
-        new AlertDialog.Builder(this)
+        new AlertDialog.Builder(this, R.style.Theme_PureBoxDialog)
                 .setTitle(R.string.open_on_start_label)
                 .setSingleChoiceItems(labels, checked, (dialog, which) -> {
                     dialog.dismiss();
@@ -589,7 +645,7 @@ public final class LauncherSettingsActivity extends Activity {
 
     private void showApiKeyDialog(int titleRes, int savedToastRes, String prefKey, String defaultKey, String currentKey) {
         float density = getResources().getDisplayMetrics().density;
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        AlertDialog.Builder builder = new AlertDialog.Builder(this, R.style.Theme_PureBoxDialog);
         builder.setTitle(titleRes);
         final EditText input = new EditText(this);
         input.setText(currentKey);
@@ -625,7 +681,7 @@ public final class LauncherSettingsActivity extends Activity {
 
     private void showGreetingNameDialog() {
         float density = getResources().getDisplayMetrics().density;
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        AlertDialog.Builder builder = new AlertDialog.Builder(this, R.style.Theme_PureBoxDialog);
         builder.setTitle(R.string.greeting_name_label);
         final EditText input = new EditText(this);
         input.setText(greetingName);
@@ -656,7 +712,7 @@ public final class LauncherSettingsActivity extends Activity {
 
     private void showWeatherCityDialog() {
         float density = getResources().getDisplayMetrics().density;
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        AlertDialog.Builder builder = new AlertDialog.Builder(this, R.style.Theme_PureBoxDialog);
         builder.setTitle(R.string.weather_city_label);
         final EditText input = new EditText(this);
         input.setText(weatherCity);
@@ -697,7 +753,7 @@ public final class LauncherSettingsActivity extends Activity {
             labels[i] = results.get(i).pickerLabel();
         }
         final int[] selected = {0};
-        new AlertDialog.Builder(this)
+        new AlertDialog.Builder(this, R.style.Theme_PureBoxDialog)
                 .setTitle(R.string.weather_city_pick_title)
                 .setSingleChoiceItems(labels, 0, (d, which) -> selected[0] = which)
                 .setPositiveButton(R.string.save, (d, which) -> {
@@ -756,6 +812,10 @@ public final class LauncherSettingsActivity extends Activity {
         wallpaperChoice.setSelected(!spotlightEnabled && wallpaperCurrent != null && !"none".equals(wallpaperCurrent));
 
         setTogglePill(spotlightEnabledChoice, spotlightEnabled);
+        setTogglePill(spotlightWatchNextChoice, spotlightWatchNext);
+        spotlightWatchNextChoice.setAlpha(spotlightEnabled ? 1f : 0.45f);
+        updateSpotlightServicesSummary();
+        spotlightServicesChoice.setAlpha(spotlightEnabled ? 1f : 0.45f);
         tmdbApiKeyChoice.setText(formatApiKeyState(SpotlightManager.getTmdbApiKey(this)));
         fanartApiKeyChoice.setText(formatApiKeyState(SpotlightManager.getFanartApiKey(this)));
         tvdbApiKeyChoice.setText(formatApiKeyState(SpotlightManager.getTvdbApiKey(this)));
@@ -826,8 +886,204 @@ public final class LauncherSettingsActivity extends Activity {
                 || choices.contains(Config.GREETING_NAME_KEY) || choices.contains(Config.SHOW_STATS_KEY)
                 || choices.contains(Config.SHOW_WEATHER_KEY) || choices.contains(Config.WEATHER_CITY_KEY)
                 || choices.contains(Config.SPOTLIGHT_ENABLED_KEY)
+                || choices.contains(Config.SPOTLIGHT_SHOW_WATCH_NEXT_KEY)
+                || choices.contains(Config.SPOTLIGHT_DISABLED_SERVICES_KEY)
                 || choices.contains(Config.AMBIENT_GLOW_KEY) || choices.contains(Config.APP_GLOW_KEY)
                 || choices.contains(Config.LIBRARY_BUTTON_KEY) || choices.contains(Config.SHOW_LIBRARY_PILL_KEY);
+    }
+
+    private void updateSpotlightServicesSummary() {
+        if (spotlightServicesChoice == null) return;
+        int total = detectedVideoServices.size();
+        if (total == 0) {
+            spotlightServicesChoice.setText(R.string.spotlight_services_empty);
+            spotlightServicesChoice.setSelected(false);
+            return;
+        }
+        java.util.Set<String> disabled = SpotlightManager.getDisabledServices(this);
+        int enabled = 0;
+        for (SpotlightManager.ServiceOption opt : detectedVideoServices) {
+            if (!disabled.contains(opt.key)) enabled++;
+        }
+        if (enabled == total) {
+            spotlightServicesChoice.setText(getString(R.string.spotlight_services_all, total));
+            spotlightServicesChoice.setSelected(true);
+        } else if (enabled == 0) {
+            spotlightServicesChoice.setText(R.string.spotlight_services_none);
+            spotlightServicesChoice.setSelected(false);
+        } else {
+            spotlightServicesChoice.setText(getString(R.string.spotlight_services_count, enabled, total));
+            spotlightServicesChoice.setSelected(true);
+        }
+    }
+
+    private void showSpotlightServicesDialog() {
+        detectedVideoServices = SpotlightManager.detectInstalledVideoServices(this);
+        if (detectedVideoServices.isEmpty()) {
+            Toast.makeText(this, R.string.spotlight_services_empty, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final java.util.Set<String> disabled = SpotlightManager.getDisabledServices(this);
+        final boolean[] checked = new boolean[detectedVideoServices.size()];
+        for (int i = 0; i < detectedVideoServices.size(); i++) {
+            checked[i] = !disabled.contains(detectedVideoServices.get(i).key);
+        }
+
+        final float d = getResources().getDisplayMetrics().density;
+        final int padH = Math.round(18 * d);
+        final int padV = Math.round(12 * d);
+
+        android.widget.LinearLayout root = new android.widget.LinearLayout(this);
+        root.setOrientation(android.widget.LinearLayout.VERTICAL);
+        root.setPadding(Math.round(22 * d), Math.round(18 * d), Math.round(22 * d), Math.round(18 * d));
+
+        TextView title = new TextView(this);
+        title.setText(R.string.spotlight_services_title);
+        title.setTextColor(0xFFFFFFFF);
+        title.setTextSize(19);
+        title.setPadding(Math.round(6 * d), 0, Math.round(6 * d), Math.round(14 * d));
+        root.addView(title);
+
+        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        scroll.setVerticalScrollBarEnabled(false);
+        android.widget.LinearLayout.LayoutParams scrollLp = new android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        android.widget.LinearLayout listBox = new android.widget.LinearLayout(this);
+        listBox.setOrientation(android.widget.LinearLayout.VERTICAL);
+
+        final android.graphics.drawable.GradientDrawable[] rowBgs = new android.graphics.drawable.GradientDrawable[detectedVideoServices.size()];
+        final TextView[] nameViews = new TextView[detectedVideoServices.size()];
+        final TextView[] stateViews = new TextView[detectedVideoServices.size()];
+        final android.graphics.drawable.GradientDrawable[] badgeBgs = new android.graphics.drawable.GradientDrawable[detectedVideoServices.size()];
+
+        final Runnable[] styleRow = new Runnable[detectedVideoServices.size()];
+        final android.widget.LinearLayout[] rows = new android.widget.LinearLayout[detectedVideoServices.size()];
+
+        for (int i = 0; i < detectedVideoServices.size(); i++) {
+            final int idx = i;
+            SpotlightManager.ServiceOption opt = detectedVideoServices.get(i);
+
+            android.widget.LinearLayout row = new android.widget.LinearLayout(this);
+            row.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+            row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            row.setFocusable(true);
+            row.setFocusableInTouchMode(true);
+            row.setClickable(true);
+            row.setPadding(padH, padV, padH, padV);
+            android.widget.LinearLayout.LayoutParams rowLp = new android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+            rowLp.bottomMargin = Math.round(6 * d);
+            row.setLayoutParams(rowLp);
+
+            android.graphics.drawable.GradientDrawable rowBg = new android.graphics.drawable.GradientDrawable();
+            rowBg.setCornerRadius(12 * d);
+            row.setBackground(rowBg);
+            rowBgs[i] = rowBg;
+
+            TextView nameTv = new TextView(this);
+            nameTv.setText(opt.label);
+            nameTv.setTextSize(15);
+            nameTv.setLayoutParams(new android.widget.LinearLayout.LayoutParams(
+                    0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            nameViews[i] = nameTv;
+            row.addView(nameTv);
+
+            TextView stateTv = new TextView(this);
+            stateTv.setTextSize(12.5f);
+            stateTv.setPadding(Math.round(12 * d), Math.round(4 * d), Math.round(12 * d), Math.round(4 * d));
+            android.graphics.drawable.GradientDrawable badgeBg = new android.graphics.drawable.GradientDrawable();
+            badgeBg.setCornerRadius(100 * d);
+            stateTv.setBackground(badgeBg);
+            stateViews[i] = stateTv;
+            badgeBgs[i] = badgeBg;
+            row.addView(stateTv);
+
+            styleRow[i] = () -> {
+                boolean focused = row.hasFocus();
+                boolean on = checked[idx];
+                rowBg.setColor(focused ? 0xFFFFFFFF : 0x18FFFFFF);
+                nameTv.setTextColor(focused ? 0xFF111111 : (on ? 0xFFFFFFFF : 0x80FFFFFF));
+                stateTv.setText(on ? R.string.on : R.string.off);
+                if (focused) {
+                    badgeBg.setColor(on ? 0xFF111111 : 0x26000000);
+                    stateTv.setTextColor(on ? 0xFFFFFFFF : 0xFF444444);
+                } else {
+                    badgeBg.setColor(on ? 0x334ADE80 : 0x1AFFFFFF);
+                    stateTv.setTextColor(on ? 0xFF86EFAC : 0x80FFFFFF);
+                }
+            };
+            styleRow[i].run();
+
+            row.setOnFocusChangeListener((v, hasFocus) -> styleRow[idx].run());
+            row.setOnClickListener(v -> {
+                checked[idx] = !checked[idx];
+                styleRow[idx].run();
+            });
+            rows[i] = row;
+            listBox.addView(row);
+        }
+
+        scroll.addView(listBox);
+        // Cap scroll height so the dialog stays compact on 1080p TV screens
+        int maxListH = Math.round(Math.min(detectedVideoServices.size() * 54, 340) * d);
+        scrollLp.height = maxListH;
+        scrollLp.weight = 0f;
+        root.addView(scroll, scrollLp);
+
+        android.widget.LinearLayout actions = new android.widget.LinearLayout(this);
+        actions.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+        actions.setGravity(android.view.Gravity.END);
+        actions.setPadding(0, Math.round(14 * d), 0, 0);
+
+        final AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_PureBoxDialog)
+                .setView(root)
+                .create();
+
+        TextView btnCancel = createDialogPillButton(getString(android.R.string.cancel), d);
+        btnCancel.setOnClickListener(v -> dialog.dismiss());
+        android.widget.LinearLayout.LayoutParams cancelLp = new android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+        cancelLp.setMarginEnd(Math.round(10 * d));
+        actions.addView(btnCancel, cancelLp);
+
+        TextView btnSave = createDialogPillButton(getString(R.string.save), d);
+        btnSave.setOnClickListener(v -> {
+            java.util.Set<String> newDisabled = new java.util.HashSet<>();
+            for (int i = 0; i < detectedVideoServices.size(); i++) {
+                if (!checked[i]) newDisabled.add(detectedVideoServices.get(i).key);
+            }
+            choices.edit().putStringSet(Config.SPOTLIGHT_DISABLED_SERVICES_KEY, newDisabled).apply();
+            changed();
+            refresh();
+            dialog.dismiss();
+        });
+        actions.addView(btnSave);
+        root.addView(actions);
+
+        dialog.show();
+        if (rows.length > 0) rows[0].requestFocus();
+    }
+
+    private TextView createDialogPillButton(String text, float d) {
+        TextView btn = new TextView(this);
+        btn.setText(text);
+        btn.setTextSize(14);
+        btn.setFocusable(true);
+        btn.setFocusableInTouchMode(true);
+        btn.setClickable(true);
+        btn.setPadding(Math.round(20 * d), Math.round(10 * d), Math.round(20 * d), Math.round(10 * d));
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setCornerRadius(100 * d);
+        bg.setColor(0x22FFFFFF);
+        btn.setBackground(bg);
+        btn.setTextColor(0xFFFFFFFF);
+        btn.setOnFocusChangeListener((v, hasFocus) -> {
+            bg.setColor(hasFocus ? 0xFFFFFFFF : 0x22FFFFFF);
+            btn.setTextColor(hasFocus ? 0xFF111111 : 0xFFFFFFFF);
+        });
+        return btn;
     }
 
     private String formatApiKeyState(String key) {
