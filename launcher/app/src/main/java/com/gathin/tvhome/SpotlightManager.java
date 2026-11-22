@@ -138,10 +138,15 @@ public final class SpotlightManager {
     private final Map<String, String[]> tmdbEnrichCache = new HashMap<>();
     private final Map<String, List<String>> multiBackdropCache = new HashMap<>();
     private final File cacheDir;
+    private final int backdropReqW;
+    private final int backdropReqH;
 
     public SpotlightManager(Context context, Callback callback) {
         this.context = context.getApplicationContext();
         this.callback = callback;
+        android.util.DisplayMetrics dm = this.context.getResources().getDisplayMetrics();
+        this.backdropReqW = Math.min(1920, Math.max(640, dm.widthPixels));
+        this.backdropReqH = Math.min(1080, Math.max(360, dm.heightPixels));
         File ext = context.getExternalFilesDir(null);
         this.cacheDir = new File(ext != null ? ext : context.getFilesDir(), "spotlight_cache");
         if (!cacheDir.exists()) cacheDir.mkdirs();
@@ -681,7 +686,7 @@ public final class SpotlightManager {
         if (targetUrl == null || targetUrl.isEmpty()) return null;
         File localFile = new File(cacheDir, "bg_hd_" + Math.abs(targetUrl.hashCode()) + ".jpg");
         if (localFile.exists() && localFile.length() > 0) {
-            Bitmap bmp = decodeBackdropBitmap(localFile.getAbsolutePath(), 1920, 1080);
+            Bitmap bmp = decodeBackdropBitmap(localFile.getAbsolutePath(), backdropReqW, backdropReqH);
             if (bmp != null) return bmp;
         }
         try {
@@ -694,7 +699,7 @@ public final class SpotlightManager {
             Log.w(TAG, "Failed loading backdrop " + targetUrl + ": " + e.getMessage());
         }
         if (localFile.exists() && localFile.length() > 0) {
-            return decodeBackdropBitmap(localFile.getAbsolutePath(), 1920, 1080);
+            return decodeBackdropBitmap(localFile.getAbsolutePath(), backdropReqW, backdropReqH);
         }
         return null;
     }
@@ -2049,7 +2054,16 @@ public final class SpotlightManager {
         BitmapFactory.Options opts = new BitmapFactory.Options();
         opts.inJustDecodeBounds = true;
         BitmapFactory.decodeFile(path, opts);
-        opts.inSampleSize = calculateInSampleSize(opts, reqW, reqH);
+        int sample = calculateInSampleSize(opts, reqW, reqH);
+        opts.inSampleSize = sample;
+        int sampledW = opts.outWidth / Math.max(1, sample);
+        int sampledH = opts.outHeight / Math.max(1, sample);
+        // Scale down directly during native decode when the image exceeds the display size (e.g. 1080p on 720p TV)
+        if (sampledW > reqW && sampledH > reqH && reqW > 0 && reqH > 0) {
+            opts.inScaled = true;
+            opts.inDensity = sampledW;
+            opts.inTargetDensity = reqW;
+        }
         opts.inJustDecodeBounds = false;
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             opts.inPreferredConfig = Bitmap.Config.HARDWARE;

@@ -26,8 +26,10 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
     private final boolean lightGlass;
     /** Padding all round the tiles equal to the gap between them (config.xml dock_even_padding). */
     private final boolean evenPadding;
-    /** The band's top and bottom the glass gradient was made for; it is remade when they move. */
-    private float shaderTop = Float.NaN, shaderBottom = Float.NaN;
+    /** Cached glass gradient and translation matrix so vertical scrolling allocates zero objects per frame. */
+    private LinearGradient glassShader;
+    private float shaderHeight = Float.NaN;
+    private final android.graphics.Matrix shaderMatrix = new android.graphics.Matrix();
     /** Draw the band and its edge (config.xml dock_band); false leaves the tiles floating on the wallpaper. */
     private final boolean bandVisible;
     /** single_row: the tiles after the dock share its row, so they take the same offsets to stay level with it. */
@@ -147,18 +149,23 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
             rect.right = Math.min(rect.right, parent.getWidth() - density);
         }
         rect.bottom += namesRoom;
-        if (lightGlass && (rect.top != shaderTop || rect.bottom != shaderBottom)) {
-            // Scale the frosted glass gradient by opacity so 100%, 70%, 50% and 30% are clearly distinct on screen.
-            float scale = this.opacity / 100f;
-            int topAlpha = Math.max(0x0A, Math.round(0x58 * scale));
-            int bottomAlpha = Math.max(0x05, Math.round(0x28 * scale));
-            band.setAlpha(255);
-            band.setShader(new LinearGradient(0, rect.top, 0, rect.bottom,
-                    (topAlpha << 24) | 0xFFFFFF,
-                    (bottomAlpha << 24) | 0xD8E0E8,
-                    Shader.TileMode.CLAMP));
-            shaderTop = rect.top;
-            shaderBottom = rect.bottom;
+        if (lightGlass) {
+            float h = rect.height();
+            if (glassShader == null || h != shaderHeight) {
+                // Scale the frosted glass gradient by opacity so 100%, 70%, 50% and 30% are clearly distinct on screen.
+                float scale = this.opacity / 100f;
+                int topAlpha = Math.max(0x0A, Math.round(0x58 * scale));
+                int bottomAlpha = Math.max(0x05, Math.round(0x28 * scale));
+                band.setAlpha(255);
+                glassShader = new LinearGradient(0, 0, 0, Math.max(1f, h),
+                        (topAlpha << 24) | 0xFFFFFF,
+                        (bottomAlpha << 24) | 0xD8E0E8,
+                        Shader.TileMode.CLAMP);
+                band.setShader(glassShader);
+                shaderHeight = h;
+            }
+            shaderMatrix.setTranslate(0f, rect.top);
+            glassShader.setLocalMatrix(shaderMatrix);
         }
         c.drawRoundRect(rect, radius, radius, band);
         c.drawRoundRect(rect, radius, radius, edge);

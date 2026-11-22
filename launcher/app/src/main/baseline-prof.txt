@@ -1,0 +1,46 @@
+# PureBoxTV ART Baseline Profile
+# Pre-compiles startup, home grid scrolling, Spotlight 60fps transitions, and settings hot paths
+# ahead-of-time (AOT) on install/first boot to eliminate cold-start and first-frame jank on TVBoxes.
+
+HSPLcom/gathin/tvhome/MainActivity;->**(**)**
+Lcom/gathin/tvhome/MainActivity;
+HSPLcom/gathin/tvhome/MainActivity$**;->**(**)**
+Lcom/gathin/tvhome/MainActivity$**;
+
+HSPLcom/gathin/tvhome/AppAdapter;->**(**)**
+Lcom/gathin/tvhome/AppAdapter;
+HSPLcom/gathin/tvhome/AppAdapter$**;->**(**)**
+Lcom/gathin/tvhome/AppAdapter$**;
+
+HSPLcom/gathin/tvhome/SpotlightManager;->**(**)**
+Lcom/gathin/tvhome/SpotlightManager;
+HSPLcom/gathin/tvhome/SpotlightManager$**;->**(**)**
+Lcom/gathin/tvhome/SpotlightManager$**;
+
+HSPLcom/gathin/tvhome/GlassView;->**(**)**
+Lcom/gathin/tvhome/GlassView;
+
+HSPLcom/gathin/tvhome/DockDecoration;->**(**)**
+Lcom/gathin/tvhome/DockDecoration;
+
+HSPLcom/gathin/tvhome/Config;->**(**)**
+Lcom/gathin/tvhome/Config;
+
+HSPLcom/gathin/tvhome/WeatherManager;->**(**)**
+Lcom/gathin/tvhome/WeatherManager;
+
+HSPLcom/gathin/tvhome/WallpaperPlayer;->**(**)**
+Lcom/gathin/tvhome/WallpaperPlayer;
+
+HSPLcom/gathin/tvhome/ClockRefresh;->**(**)**
+Lcom/gathin/tvhome/ClockRefresh;
+
+HSPLcom/gathin/tvhome/LauncherSettingsActivity;->**(**)**
+Lcom/gathin/tvhome/LauncherSettingsActivity;
+
+HSPLcom/gathin/tvhome/QuickSettingsActivity;->**(**)**
+Lcom/gathin/tvhome/QuickSettingsActivity;
+
+HSPLandroidx/recyclerview/widget/RecyclerView;->**(**)**
+HSPLandroidx/recyclerview/widget/GridLayoutManager;->**(**)**
+HSPLandroidx/dynamicanimation/animation/SpringAnimation;->**(**)**

@@ -2172,25 +2172,29 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         heroShown = true;
     }
 
+    private final Runnable adjustHeroYRunnable = () -> {
+        if (hero == null) return;
+        float dockTop = lastDockTopInRoot;
+        if (dockTop <= 0 && grid != null && grid.getChildCount() > 0) {
+            View first = grid.getChildAt(0);
+            View card = first != null ? first.findViewById(R.id.card) : null;
+            if (card != null && card.getHeight() > 0) {
+                tileRect.set(0, 0, card.getWidth(), card.getHeight());
+                root.offsetDescendantRectToMyCoords(card, tileRect);
+                dockTop = tileRect.top;
+                lastDockTopInRoot = dockTop;
+            }
+        }
+        if (dockTop <= 0) return;
+        float gapDp = 32f;
+        float y = dockTop - gapDp * density - hero.getHeight();
+        hero.setY(y);
+    };
+
     private void adjustHeroY() {
         if (hero == null) return;
-        hero.post(() -> {
-            float dockTop = lastDockTopInRoot;
-            if (dockTop <= 0 && grid != null && grid.getChildCount() > 0) {
-                View first = grid.getChildAt(0);
-                View card = first != null ? first.findViewById(R.id.card) : null;
-                if (card != null && card.getHeight() > 0) {
-                    Rect r = new Rect(0, 0, card.getWidth(), card.getHeight());
-                    root.offsetDescendantRectToMyCoords(card, r);
-                    dockTop = r.top;
-                    lastDockTopInRoot = dockTop;
-                }
-            }
-            if (dockTop <= 0) return;
-            float gapDp = 32f;
-            float y = dockTop - gapDp * density - hero.getHeight();
-            hero.setY(y);
-        });
+        hero.removeCallbacks(adjustHeroYRunnable);
+        hero.post(adjustHeroYRunnable);
     }
 
     private void removeCurrentSpotlight() {
@@ -2458,71 +2462,105 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
+    // Pre-allocated Zero-GC Choreographer state & callbacks for 60 FPS Spotlight animations
+    private long marqueeStartNs = -1L;
+    private float marqueeOverflow = 0f;
+    private float marqueeTravelMs = 1200f;
+    private float marqueeCycleMs = 5000f;
+    private static final float MARQUEE_PAUSE_MS = 1300f;
+    private final android.view.Choreographer.FrameCallback marqueeFrameCallback = new android.view.Choreographer.FrameCallback() {
+        @Override
+        public void doFrame(long frameTimeNanos) {
+            if (!spotlightFocused || !resumed || heroActionService == null) return;
+            if (marqueeStartNs < 0L) {
+                marqueeStartNs = frameTimeNanos;
+                android.view.Choreographer.getInstance().postFrameCallback(this);
+                return;
+            }
+            float phase = ((frameTimeNanos - marqueeStartNs) / 1_000_000f) % marqueeCycleMs;
+            float pos;
+            if (phase < MARQUEE_PAUSE_MS) {
+                pos = 0f;
+            } else if (phase < MARQUEE_PAUSE_MS + marqueeTravelMs) {
+                float t = (phase - MARQUEE_PAUSE_MS) / marqueeTravelMs;
+                pos = t * t * (3f - 2f * t);   // smoothstep forward
+            } else if (phase < MARQUEE_PAUSE_MS + marqueeTravelMs + MARQUEE_PAUSE_MS) {
+                pos = 1f;
+            } else {
+                float t = (phase - MARQUEE_PAUSE_MS - marqueeTravelMs - MARQUEE_PAUSE_MS) / marqueeTravelMs;
+                pos = 1f - (t * t * (3f - 2f * t));   // smoothstep back to start
+            }
+            heroActionService.setTranslationX(-marqueeOverflow * pos);
+            android.view.Choreographer.getInstance().postFrameCallback(this);
+        }
+    };
+
+    private final Runnable applyActionBadgeRunnable = () -> {
+        if (heroActionBadgeBox == null || heroActionService == null) return;
+        int innerW = heroActionBadgeBox.getWidth()
+                - heroActionBadgeBox.getPaddingLeft()
+                - heroActionBadgeBox.getPaddingRight();
+        if (innerW <= 0) return;
+        float textW = heroActionService.getPaint().measureText(
+                heroActionService.getText().toString().toUpperCase(Locale.getDefault()));
+        float overflow = textW - innerW;
+        android.view.Choreographer.getInstance().removeFrameCallback(marqueeFrameCallback);
+        if (overflow <= 2f) {
+            // Center short names cleanly inside the colored badge with zero jitter
+            heroActionService.setTranslationX((innerW - textW) / 2f);
+            return;
+        }
+        heroActionService.setTranslationX(0f);
+        if (!spotlightFocused) return;
+        marqueeStartNs = -1L;
+        marqueeOverflow = overflow;
+        marqueeTravelMs = Math.max(1200f, (overflow / (34f * density)) * 1000f);
+        marqueeCycleMs = MARQUEE_PAUSE_MS + marqueeTravelMs + MARQUEE_PAUSE_MS + marqueeTravelMs;
+        android.view.Choreographer.getInstance().postFrameCallback(marqueeFrameCallback);
+    };
+
     /**
      * Positions the service text inside the colored pill badge synchronously when laid out (preventing
      * any 1-frame horizontal jitter), and runs a smooth continuous ping-pong scroll only when overflowing.
      */
     private void positionActionBadgeAndMarquee() {
-        final int token = ++actionMarqueeToken;
+        ++actionMarqueeToken;
         if (heroActionBadgeBox == null || heroActionService == null) return;
-        final Runnable apply = () -> {
-            if (token != actionMarqueeToken) return;
-            int innerW = heroActionBadgeBox.getWidth()
-                    - heroActionBadgeBox.getPaddingLeft()
-                    - heroActionBadgeBox.getPaddingRight();
-            if (innerW <= 0) return;
-            float textW = heroActionService.getPaint().measureText(
-                    heroActionService.getText().toString().toUpperCase(Locale.getDefault()));
-            float overflow = textW - innerW;
-            if (overflow <= 2f) {
-                // Center short names cleanly inside the colored badge with zero jitter
-                heroActionService.setTranslationX((innerW - textW) / 2f);
-                return;
-            }
-            heroActionService.setTranslationX(0f);
-            if (!spotlightFocused) return;
-            final float pauseMs = 1300f;
-            final float travelMs = Math.max(1200f, (overflow / (34f * density)) * 1000f);
-            final float cycleMs = pauseMs + travelMs + pauseMs + travelMs;
-            android.view.Choreographer.getInstance().postFrameCallback(new android.view.Choreographer.FrameCallback() {
-                private long startNs = -1L;
-
-                @Override
-                public void doFrame(long frameTimeNanos) {
-                    if (token != actionMarqueeToken || !spotlightFocused || !resumed) return;
-                    if (startNs < 0L) {
-                        startNs = frameTimeNanos;
-                        android.view.Choreographer.getInstance().postFrameCallback(this);
-                        return;
-                    }
-                    float phase = ((frameTimeNanos - startNs) / 1_000_000f) % cycleMs;
-                    float pos;
-                    if (phase < pauseMs) {
-                        pos = 0f;
-                    } else if (phase < pauseMs + travelMs) {
-                        float t = (phase - pauseMs) / travelMs;
-                        pos = t * t * (3f - 2f * t);   // smoothstep forward
-                    } else if (phase < pauseMs + travelMs + pauseMs) {
-                        pos = 1f;
-                    } else {
-                        float t = (phase - pauseMs - travelMs - pauseMs) / travelMs;
-                        pos = 1f - (t * t * (3f - 2f * t));   // smoothstep back to start
-                    }
-                    heroActionService.setTranslationX(-overflow * pos);
-                    android.view.Choreographer.getInstance().postFrameCallback(this);
-                }
-            });
-        };
+        heroActionBadgeBox.removeCallbacks(applyActionBadgeRunnable);
         if (heroActionBadgeBox.getWidth() > 0) {
-            apply.run();
+            applyActionBadgeRunnable.run();
         } else {
-            heroActionBadgeBox.post(apply);
+            heroActionBadgeBox.post(applyActionBadgeRunnable);
         }
     }
 
+    private long focusAnimStartNs = -1L;
+    private boolean focusAnimTarget = false;
+    private boolean focusAnimHasBadge = false;
+    private float focusAnimDotsShiftX = 0f;
+    private float focusAnimDurationMs = 240f;
+    private final android.view.Choreographer.FrameCallback spotlightFocusFrameCallback = new android.view.Choreographer.FrameCallback() {
+        @Override
+        public void doFrame(long frameTimeNanos) {
+            if (focusAnimStartNs < 0L) {
+                focusAnimStartNs = frameTimeNanos;
+                android.view.Choreographer.getInstance().postFrameCallback(this);
+                return;
+            }
+            float t = Math.min(1f, (frameTimeNanos - focusAnimStartNs) / 1_000_000f / focusAnimDurationMs);
+            float inv = 1f - t;
+            float eased = 1f - inv * inv * inv;   // smooth cubic ease-out
+            applySpotlightFocusFrame(focusAnimTarget, eased, focusAnimHasBadge, focusAnimDotsShiftX);
+            if (t < 1f) {
+                android.view.Choreographer.getInstance().postFrameCallback(this);
+            }
+        }
+    };
+
     /** Smooth 60 FPS Choreographer transition when entering or leaving Spotlight focus (works with animation scale 0). */
     private void animateSpotlightFocus(final boolean focused) {
-        final int token = ++spotlightFocusAnimToken;
+        ++spotlightFocusAnimToken;
+        android.view.Choreographer.getInstance().removeFrameCallback(spotlightFocusFrameCallback);
         final boolean hasBadgeText = heroBadge != null && heroBadge.getText().length() > 0;
         // Exact horizontal shift of heroDots when pill (206+14dp) + left arrow (18+6dp) appear/disappear
         final float dotsShiftX = (206f + 14f + 18f + 6f) * density;
@@ -2555,6 +2593,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             positionActionBadgeAndMarquee();
         } else {
             ++actionMarqueeToken;
+            android.view.Choreographer.getInstance().removeFrameCallback(marqueeFrameCallback);
             if (hasBadgeText) {
                 heroBadge.setVisibility(View.VISIBLE);
                 heroBadge.setAlpha(0f);
@@ -2566,27 +2605,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             return;
         }
 
-        final float durationMs = focused ? 240f : 200f;
-        android.view.Choreographer.getInstance().postFrameCallback(new android.view.Choreographer.FrameCallback() {
-            private long startNs = -1L;
-
-            @Override
-            public void doFrame(long frameTimeNanos) {
-                if (token != spotlightFocusAnimToken) return;
-                if (startNs < 0L) {
-                    startNs = frameTimeNanos;
-                    android.view.Choreographer.getInstance().postFrameCallback(this);
-                    return;
-                }
-                float t = Math.min(1f, (frameTimeNanos - startNs) / 1_000_000f / durationMs);
-                float inv = 1f - t;
-                float eased = 1f - inv * inv * inv;   // smooth cubic ease-out
-                applySpotlightFocusFrame(focused, eased, hasBadgeText, dotsShiftX);
-                if (t < 1f) {
-                    android.view.Choreographer.getInstance().postFrameCallback(this);
-                }
-            }
-        });
+        focusAnimStartNs = -1L;
+        focusAnimTarget = focused;
+        focusAnimHasBadge = hasBadgeText;
+        focusAnimDotsShiftX = dotsShiftX;
+        focusAnimDurationMs = focused ? 240f : 200f;
+        android.view.Choreographer.getInstance().postFrameCallback(spotlightFocusFrameCallback);
     }
 
     private void applySpotlightFocusFrame(boolean focused, float eased, boolean hasBadgeText, float dotsShiftX) {
@@ -2680,9 +2704,32 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
+    private long backdropDimStartNs = -1L;
+    private float backdropDimStartAlpha = 1f;
+    private float backdropDimTargetAlpha = 1f;
+    private float backdropDimDurationMs = 360f;
+    private final android.view.Choreographer.FrameCallback backdropDimFrameCallback = new android.view.Choreographer.FrameCallback() {
+        @Override
+        public void doFrame(long frameTimeNanos) {
+            if (backdropDimStartNs < 0L) {
+                backdropDimStartNs = frameTimeNanos;
+                android.view.Choreographer.getInstance().postFrameCallback(this);
+                return;
+            }
+            float t = Math.min(1f, (frameTimeNanos - backdropDimStartNs) / 1_000_000f / backdropDimDurationMs);
+            float eased = t * t * (3f - 2f * t);
+            backdropLoadAlpha = backdropDimStartAlpha + (backdropDimTargetAlpha - backdropDimStartAlpha) * eased;
+            applyBackdropAlpha();
+            if (t < 1f) {
+                android.view.Choreographer.getInstance().postFrameCallback(this);
+            }
+        }
+    };
+
     /** Smoothly dims or restores the Spotlight backdrop container while waiting for uncached posters to load. */
     private void animateBackdropBrightness(final float targetAlpha, final float durationMs) {
-        final int token = ++backdropDimToken;
+        ++backdropDimToken;
+        android.view.Choreographer.getInstance().removeFrameCallback(backdropDimFrameCallback);
         if (heroArtContainer == null) return;
         final float startAlpha = backdropLoadAlpha;
         if (Math.abs(startAlpha - targetAlpha) < 0.01f || !animations || reducedMotion) {
@@ -2690,26 +2737,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             applyBackdropAlpha();
             return;
         }
-        android.view.Choreographer.getInstance().postFrameCallback(new android.view.Choreographer.FrameCallback() {
-            private long startNs = -1L;
-
-            @Override
-            public void doFrame(long frameTimeNanos) {
-                if (token != backdropDimToken) return;
-                if (startNs < 0L) {
-                    startNs = frameTimeNanos;
-                    android.view.Choreographer.getInstance().postFrameCallback(this);
-                    return;
-                }
-                float t = Math.min(1f, (frameTimeNanos - startNs) / 1_000_000f / durationMs);
-                float eased = t * t * (3f - 2f * t);
-                backdropLoadAlpha = startAlpha + (targetAlpha - startAlpha) * eased;
-                applyBackdropAlpha();
-                if (t < 1f) {
-                    android.view.Choreographer.getInstance().postFrameCallback(this);
-                }
-            }
-        });
+        backdropDimStartNs = -1L;
+        backdropDimStartAlpha = startAlpha;
+        backdropDimTargetAlpha = targetAlpha;
+        backdropDimDurationMs = durationMs;
+        android.view.Choreographer.getInstance().postFrameCallback(backdropDimFrameCallback);
     }
 
     private void setSpotlightTextAlpha(float alpha) {
@@ -2738,6 +2770,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (!animate || !animations || reducedMotion) {
             ++crossfadeToken;
             ++backdropDimToken;
+            android.view.Choreographer.getInstance().removeFrameCallback(crossfadeFrameCallback);
+            android.view.Choreographer.getInstance().removeFrameCallback(backdropDimFrameCallback);
             backdropLoadAlpha = 1f;
             applyBackdropAlpha();
             applySpotlightTexts(item);
@@ -2835,61 +2869,75 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (emergingFromDim) return;
         }
 
-        // Driven directly by Choreographer frame timestamps so the crossfade always runs at 60fps
-        // over 1000ms even when Android's global animator_duration_scale is set to 0 on the TVBox.
-        android.view.Choreographer.getInstance().postFrameCallback(new android.view.Choreographer.FrameCallback() {
-            private long startNs = -1L;
-            private boolean textSwapped = !animateText;
+        // Driven directly by pre-allocated Choreographer FrameCallback (Zero-GC at 60fps, works with animation scale 0).
+        android.view.Choreographer.getInstance().removeFrameCallback(crossfadeFrameCallback);
+        cfStartNs = -1L;
+        cfAnimateText = animateText;
+        cfTextSwapped = !animateText;
+        cfEmergingFromDim = emergingFromDim;
+        cfIncoming = incoming;
+        cfOutgoing = outgoing;
+        cfItem = item;
+        android.view.Choreographer.getInstance().postFrameCallback(crossfadeFrameCallback);
+    }
 
-            @Override
-            public void doFrame(long frameTimeNanos) {
-                if (token != crossfadeToken) return;
-                if (startNs < 0L) {
-                    // First frame after Bitmap bind: start timer now so GPU upload doesn't skip frames
-                    startNs = frameTimeNanos;
-                    android.view.Choreographer.getInstance().postFrameCallback(this);
-                    return;
-                }
-                float elapsedMs = (frameTimeNanos - startNs) / 1_000_000f;
+    private long cfStartNs = -1L;
+    private boolean cfAnimateText = false;
+    private boolean cfTextSwapped = true;
+    private boolean cfEmergingFromDim = false;
+    private ImageView cfIncoming = null;
+    private ImageView cfOutgoing = null;
+    private SpotlightManager.Item cfItem = null;
+    private final android.view.Choreographer.FrameCallback crossfadeFrameCallback = new android.view.Choreographer.FrameCallback() {
+        @Override
+        public void doFrame(long frameTimeNanos) {
+            if (cfStartNs < 0L) {
+                // First frame after Bitmap bind: start timer now so GPU upload doesn't skip frames
+                cfStartNs = frameTimeNanos;
+                android.view.Choreographer.getInstance().postFrameCallback(this);
+                return;
+            }
+            float elapsedMs = (frameTimeNanos - cfStartNs) / 1_000_000f;
 
-                if (animateText) {
-                    if (elapsedMs < 180f) {
-                        float outT = Math.min(1f, elapsedMs / 180f);
-                        setSpotlightTextMotion(1f - outT, -6f * outT);
-                    } else {
-                        if (!textSwapped) {
-                            textSwapped = true;
-                            applySpotlightTexts(item);
-                            adjustHeroY();
-                        }
-                        float inT = Math.min(1f, (elapsedMs - 180f) / 360f);
-                        float easedIn = 1f - (1f - inT) * (1f - inT);
-                        setSpotlightTextMotion(easedIn, 10f * (1f - easedIn));
-                    }
-                }
-
-                float imgT = emergingFromDim ? 1f : Math.min(1f, elapsedMs / 1000f);
-                if (incoming != null && !emergingFromDim) {
-                    float eased = imgT * imgT * (3f - 2f * imgT);
-                    incoming.setAlpha(eased);
-                }
-
-                if (imgT < 1f || (animateText && elapsedMs < 650f)) {
-                    android.view.Choreographer.getInstance().postFrameCallback(this);
+            if (cfAnimateText) {
+                if (elapsedMs < 180f) {
+                    float outT = Math.min(1f, elapsedMs / 180f);
+                    setSpotlightTextMotion(1f - outT, -6f * outT);
                 } else {
-                    if (incoming != null && outgoing != null) {
-                        incoming.setAlpha(1f);
-                        outgoing.setAlpha(0f);
-                    }
-                    if (!textSwapped) {
-                        applySpotlightTexts(item);
+                    if (!cfTextSwapped && cfItem != null) {
+                        cfTextSwapped = true;
+                        applySpotlightTexts(cfItem);
                         adjustHeroY();
                     }
-                    setSpotlightTextAlpha(1f);
+                    float inT = Math.min(1f, (elapsedMs - 180f) / 360f);
+                    float easedIn = 1f - (1f - inT) * (1f - inT);
+                    setSpotlightTextMotion(easedIn, 10f * (1f - easedIn));
                 }
             }
-        });
-    }
+
+            float imgT = cfEmergingFromDim ? 1f : Math.min(1f, elapsedMs / 1000f);
+            if (cfIncoming != null && !cfEmergingFromDim) {
+                float eased = imgT * imgT * (3f - 2f * imgT);
+                cfIncoming.setAlpha(eased);
+            }
+
+            if (imgT < 1f || (cfAnimateText && elapsedMs < 650f)) {
+                android.view.Choreographer.getInstance().postFrameCallback(this);
+            } else {
+                if (cfIncoming != null && cfOutgoing != null) {
+                    cfIncoming.setAlpha(1f);
+                    cfOutgoing.setAlpha(0f);
+                }
+                if (!cfTextSwapped && cfItem != null) {
+                    cfTextSwapped = true;
+                    applySpotlightTexts(cfItem);
+                    adjustHeroY();
+                }
+                setSpotlightTextAlpha(1f);
+                cfItem = null;
+            }
+        }
+    };
 
     /** The shelf's text for this dock app: its name and, on the cinematic shelf, "Last opened" and the dots. */
     private void fillHero(int position, String label) {
